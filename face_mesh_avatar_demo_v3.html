@@ -75,6 +75,10 @@
     </select>
   </div>
   <div class="control-row">
+    <label for="faceColor">Цвет лица</label>
+    <input type="color" id="faceColor" value="#d9a68a">
+  </div>
+  <div class="control-row">
     <label for="normalSmooth">Гладкость нормалей</label>
     <input type="range" id="normalSmooth" min="0" max="12" step="1" value="6" style="width:90px">
   </div>
@@ -126,6 +130,14 @@ const toggleFilter = document.getElementById("toggleFilter");
 const filterStrength = document.getElementById("filterStrength");
 const normalSmooth = document.getElementById("normalSmooth");
 const zoom = document.getElementById("zoom");
+const faceColor = document.getElementById("faceColor");
+const faceRGB = { r: 0, g: 0, b: 0 }; // базовый цвет лица для плоского режима
+function applyFaceColor() {
+  const c = faceColor.value;
+  faceRGB.r = parseInt(c.slice(1, 3), 16); faceRGB.g = parseInt(c.slice(3, 5), 16); faceRGB.b = parseInt(c.slice(5, 7), 16);
+  glMaterial.color.set(c);
+}
+faceColor.addEventListener("input", applyFaceColor);
 
 let TRIANGLES = [];
 
@@ -212,7 +224,7 @@ glScene.add(new THREE.AmbientLight(0xffffff, Math.PI * 0.25));
 const keyLight = new THREE.DirectionalLight(0xffffff, Math.PI * 0.75);
 keyLight.position.set(0, -150, 1000);
 glScene.add(keyLight);
-const glMaterial = new THREE.MeshPhongMaterial({ color: 0x82d2dc, shininess: 10, specular: 0x000000, side: THREE.DoubleSide });
+const glMaterial = new THREE.MeshPhongMaterial({ color: 0xd9a68a, shininess: 10, specular: 0x000000, side: THREE.DoubleSide });
 // Направление обхода у восстановленных треугольников произвольное, а DoubleSide в Three.js инвертирует нормаль у "обратных" граней -
 // отсюда шахматный узор. Нормали мы уже ориентировали к камере сами, поэтому отключаем эту инверсию.
 glMaterial.onBeforeCompile = (shader) => {
@@ -221,6 +233,7 @@ glMaterial.onBeforeCompile = (shader) => {
     THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", "")
   );
 };
+applyFaceColor();
 let lastPts = null, lastLandmarks = null;
 let glMesh = null, neighbors = null, tmpNor = null;
 
@@ -641,9 +654,9 @@ function renderLoop(faceLandmarker) {
         for (const f of faces) {
           if (f.eye) { drawEye(meshCtx, zpts, f.eye); continue; }
           const light = 0.25 + f.facing * 0.75;
-          const r = Math.floor(90 * light + 40);
-          const g = Math.floor(190 * light + 20);
-          const b = Math.floor(200 * light + 20);
+          const r = Math.floor(faceRGB.r * light);
+          const g = Math.floor(faceRGB.g * light);
+          const b = Math.floor(faceRGB.b * light);
           meshCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
           meshCtx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
           meshCtx.lineWidth = 0.6;
