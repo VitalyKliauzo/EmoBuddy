@@ -1,6 +1,6 @@
 // Minimal static file server (no bundler needed: the page uses an import map into node_modules).
 import { createServer } from 'node:http';
-import { stat } from 'node:fs/promises';
+import { stat, readdir } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +16,11 @@ const types = {
 createServer(async (req, res) => {
   try {
     let path = normalize(decodeURIComponent(new URL(req.url, 'http://x').pathname));
+    if (path === '/api/avatars') { // list of GLB models available in ./avatars
+      const names = (await readdir(join(root, 'avatars'))).filter((n) => n.toLowerCase().endsWith('.glb')).sort();
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(names));
+      return;
+    }
     if (path.endsWith('/')) path += 'index.html';
     const file = join(root, path);
     if (!file.startsWith(root) || !(await stat(file)).isFile()) throw new Error('nf');

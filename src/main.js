@@ -2,12 +2,14 @@ import { TalkingHead } from 'talkinghead';
 import { HeadTTS } from 'headtts';
 import { EMOTIONS, initEmotions, setEmotion } from './emotions.js';
 
-// TODO: set this to your GLB avatar (must be Ready Player Me / Avaturn-style with Oculus visemes + ARKit blendshapes).
-const AVATAR_URL = '/avatars/brunette.glb';
+// GLB avatars are listed from ./avatars by the server (/api/avatars). They must be Ready Player Me / Avaturn-style
+// (Armature/Hips/Head skeleton + Oculus visemes + ARKit blendshapes) to work with TalkingHead.
+const DEFAULT_AVATAR = 'brunette.glb';
 const TEST_PHRASE = 'Hello! I am EmoBuddy. Nice to meet you.';
 
 const statusEl = document.getElementById('status');
 const speakBtn = document.getElementById('speak');
+const avatarSel = document.getElementById('avatarSel');
 const setStatus = (s) => { statusEl.textContent = s; };
 
 // TalkingHead creates and owns the Three.js scene, camera, renderer and render loop inside this node.
@@ -50,12 +52,40 @@ export function speak(text = TEST_PHRASE) {
   headtts.synthesize({ input: text });
 }
 
-async function init() {
-  setStatus('Loading avatar…');
+let currentAvatar = null;
+
+async function loadAvatar(name) {
+  setStatus(`Loading ${name}…`);
   await head.showAvatar(
-    { url: AVATAR_URL, body: 'F', avatarMood: 'neutral', lipsyncLang: 'en' },
-    (ev) => { if (ev.lengthComputable) setStatus(`Loading avatar… ${Math.round(ev.loaded / ev.total * 100)}%`); }
+    { url: '/avatars/' + encodeURIComponent(name), body: 'F', avatarMood: 'neutral', lipsyncLang: 'en' },
+    (ev) => { if (ev.lengthComputable) setStatus(`Loading ${name}… ${Math.round(ev.loaded / ev.total * 100)}%`); }
   );
+  currentAvatar = name;
+  avatarSel.value = name;
+}
+
+avatarSel.addEventListener('change', async () => {
+  const name = avatarSel.value;
+  avatarSel.disabled = true;
+  try {
+    await loadAvatar(name);
+    setEmotion(emotionSel.value); // keep the chosen emotion on the new avatar
+    setStatus('Ready');
+  } catch (e) {
+    // showAvatar validates the model before touching the scene, so the previous avatar stays on screen.
+    console.error(e);
+    avatarSel.value = currentAvatar;
+    setStatus(`Can't use ${name}: ${e.message}`);
+  }
+  avatarSel.disabled = false;
+});
+
+async function init() {
+  const names = await (await fetch('/api/avatars')).json();
+  if (names.length === 0) throw new Error('No .glb files found in /avatars');
+  for (const n of names) avatarSel.add(new Option(n.replace(/\.glb$/i, ''), n));
+  await loadAvatar(names.includes(DEFAULT_AVATAR) ? DEFAULT_AVATAR : names[0]);
+  avatarSel.disabled = false;
   setStatus('Loading TTS (first load downloads the model)…');
   await headtts.connect();
   headtts.setup({ voice: 'af_bella', language: 'en-us', speed: 1, audioEncoding: 'wav' });
