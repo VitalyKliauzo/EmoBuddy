@@ -59,6 +59,18 @@ const HTML = `
     </select>
   </div>
   <div class="control-row">
+    <label for="toggleCavity">Полость рта</label>
+    <input type="checkbox" id="toggleCavity" checked>
+  </div>
+  <div class="control-row">
+    <label for="cavityColor">Цвет полости рта</label>
+    <input type="color" id="cavityColor" value="#3b0d14">
+  </div>
+  <div class="control-row">
+    <label for="cavityDepth">Глубина полости</label>
+    <input type="range" id="cavityDepth" min="0" max="2" step="0.05" value="1" style="width:90px">
+  </div>
+  <div class="control-row">
     <label for="toggleStable">Неподвижные точки</label>
     <input type="checkbox" id="toggleStable">
   </div>
@@ -109,7 +121,7 @@ const HTML = `
 `;
 
 const IDS = [
-  "togglePoints", "toggleMesh", "toggleTexture", "toggleMeshPoints", "toggleEyes", "eyeStyle", "toggleTeeth", "teethStyle", "toggleStable",
+  "togglePoints", "toggleMesh", "toggleTexture", "toggleMeshPoints", "toggleEyes", "eyeStyle", "toggleTeeth", "teethStyle", "toggleCavity", "cavityColor", "cavityDepth", "toggleStable",
   "toggleStatus", "renderMode", "faceColor", "normalSmooth", "shadowGradient", "zoom", "resetView", "exportGlb",
   "toggleFilter", "filterStrength"
 ];

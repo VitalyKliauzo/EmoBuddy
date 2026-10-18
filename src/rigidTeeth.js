@@ -143,6 +143,39 @@ export function createRigidTeeth(glScene, keepNormals) {
     };
   }
   const skull = createBody(SKULL_IDS), jaw = createBody(JAW_IDS);
+
+  // Нижняя челюсть как шарнир: вращается вокруг поперечной оси через височно-нижнечелюстной сустав (ВНЧС), закреплённый в системе черепа.
+  // Угол берётся из смещения центра подбородка относительно положения при закрытом рте (устойчивее, чем поворот по малому облаку точек
+  // подбородка, который почти не видит вращения). Результат - поза тела челюсти (q, s, c) в том же виде, что у rigidFit.
+  const HINGE_BACK = 0.25, HINGE_DOWN = 0.1;          // положение сустава относительно середины между щеками (доли ширины лица)
+  const hinge = { pv: null, axis: null, rest: null, n: 0 };
+  const chinW = new THREE.Vector3(), chinL = new THREE.Vector3(), va = new THREE.Vector3(), vb = new THREE.Vector3();
+  const toLocal = (v, f) => v.sub(f.c).applyQuaternion(qInv.copy(f.q).invert()).divideScalar(f.s);
+  const jawHinge = (pts, skullFit, lipAxes, closed, out) => {
+    const mid = sub(pts[454], pts[234]).multiplyScalar(0.5).add(sub(pts[234], { x: 0, y: 0, z: 0 }));
+    if (!hinge.pv) {
+      const W = sub(pts[454], pts[234]).length();
+      const pvW = mid.clone().addScaledVector(lipAxes.Z, -HINGE_BACK * W).addScaledVector(lipAxes.Y, HINGE_DOWN * W);
+      hinge.pv = toLocal(pvW, skullFit);
+      hinge.axis = toLocal(sub(pts[454], pts[234]).add(skullFit.c), skullFit).normalize();
+    }
+    chinW.set(0, 0, 0);
+    JAW_IDS.forEach(id => chinW.add(sub(pts[id], { x: 0, y: 0, z: 0 })));
+    chinL.copy(toLocal(chinW.divideScalar(JAW_IDS.length), skullFit));
+    if (!hinge.rest) hinge.rest = chinL.clone();
+    else if (closed && hinge.n < CALIB_FRAMES) { hinge.rest.lerp(chinL, 1 / (hinge.n + 2)); hinge.n++; }
+    const ax = hinge.axis;
+    va.copy(hinge.rest).sub(hinge.pv); va.addScaledVector(ax, -va.dot(ax));
+    vb.copy(chinL).sub(hinge.pv); vb.addScaledVector(ax, -vb.dot(ax));
+    const ang = Math.atan2(ax.dot(va.clone().cross(vb)), va.dot(vb));
+    const rot = new THREE.Quaternion().setFromAxisAngle(ax, ang);
+    out.q.copy(skullFit.q).multiply(rot);
+    out.s = skullFit.s;
+    // c = c_s + s * Qs * (pv - Rot * pv)
+    out.c.copy(hinge.pv).sub(va.copy(hinge.pv).applyQuaternion(rot)).applyQuaternion(skullFit.q).multiplyScalar(skullFit.s).add(skullFit.c);
+    return out;
+  };
+  const jawPose = { c: new THREE.Vector3(), q: new THREE.Quaternion(), s: 1 };
   let faceRef = 1;
 
   // Привязка дуги к телу: положение (в эталонных единицах тела) и поворот относительно тела. Усредняется по первым CALIB_FRAMES
@@ -172,13 +205,15 @@ export function createRigidTeeth(glScene, keepNormals) {
   const lipQ = new THREE.Quaternion(), lipM = new THREE.Matrix4();
   const X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3();
 
-  function update(pts, visible) {
+  function update(pts, visible, cavityVisible = true, cavityDepth = 1, cavityColor = null) {
     const show = visible && pts.length > 454; // зубы есть всегда; закрытый рот прячет их за губами (depth-тест)
     arches.forEach(m => { m.visible = show; });
-    cavity.visible = show;
+    cavity.visible = show && cavityVisible;
+    if (cavityColor) cavity.material.color.set(cavityColor);
     if (!show) return;
 
-    const skullFit = skull.fit(pts), jawFit = jaw.fit(pts);
+    const skullFit = skull.fit(pts);
+    jaw.fit(pts); // только уточняет эталон тела челюсти (RMS-масштаб); поза берётся из шарнира
     const ready = skull.ready && jaw.ready;
     if (ready && faceRef === 1) faceRef = skull.refDist(234, 454);
 
@@ -199,7 +234,7 @@ export function createRigidTeeth(glScene, keepNormals) {
     } else {
       const closed = mouthOpen(pts) < CLOSED;
       upperAnchor.pose(skullFit, p13, lipQ, closed, upPose);
-      lowerAnchor.pose(jawFit, p14, lipQ, closed, lowPose);
+      lowerAnchor.pose(jawHinge(pts, skullFit, { Y, Z }, closed, jawPose), p14, lipQ, closed, lowPose);
       arches[0].matrix.compose(upPose.p, upPose.q, sc);
       arches[1].matrix.compose(lowPose.p, lowPose.q, sc);
     }
@@ -210,10 +245,10 @@ export function createRigidTeeth(glScene, keepNormals) {
     MOUTH_LOOP.forEach((li, i) => {
       const p = pts[li], zz = -p.z;
       a.set([p.x, p.y, zz], i * 3);
-      a.set([p.x - Z.x * S * CAVITY_DEPTH, p.y - Z.y * S * CAVITY_DEPTH, zz - Z.z * S * CAVITY_DEPTH], (n + i) * 3);
+      a.set([p.x - Z.x * S * CAVITY_DEPTH * cavityDepth, p.y - Z.y * S * CAVITY_DEPTH * cavityDepth, zz - Z.z * S * CAVITY_DEPTH * cavityDepth], (n + i) * 3);
       cx += p.x; cy += p.y; cz += zz;
     });
-    const b = S * CAVITY_BACK;
+    const b = S * CAVITY_BACK * cavityDepth;
     a.set([cx / n - Z.x * b, cy / n - Z.y * b, cz / n - Z.z * b], 2 * n * 3);
     cavGeo.attributes.position.needsUpdate = true;
   }

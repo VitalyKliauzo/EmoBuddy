@@ -7,7 +7,7 @@ import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 //   eyes         - описание контуров глаз (EYES)
 //   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
 export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
-  const { shadowGradient, normalSmooth, toggleTexture, toggleEyes, eyeStyle, toggleTeeth, teethStyle } = controls;
+  const { shadowGradient, normalSmooth, toggleTexture, toggleEyes, eyeStyle, toggleTeeth, teethStyle, toggleCavity, cavityColor, cavityDepth } = controls;
   // --- Гладкий рендер: Three.js, усреднённые нормали вершин (рисуем в offscreen-canvas, потом копируем в meshCanvas) ---
   const meshCtx = meshCanvas.getContext("2d");
   const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
@@ -150,7 +150,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     glMesh.geometry.attributes.position.needsUpdate = true;
     glMesh.geometry.attributes.normal.needsUpdate = true;
     updateGlEyes(pts);
-    rigidTeeth.update(pts, mouthHoled);
+    rigidTeeth.update(pts, mouthHoled, toggleCavity.checked, +cavityDepth.value, cavityColor.value);
     glRenderer.render(glScene, glCamera);
     meshCtx.drawImage(glRenderer.domElement, 0, 0, meshCanvas.width, meshCanvas.height);
   }
