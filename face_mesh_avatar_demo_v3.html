@@ -44,6 +44,7 @@
 import * as THREE from "three";
 import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 import { createControls } from "/src/controls.js";
+import { createFilters } from "/src/oneEuro.js";
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
@@ -201,24 +202,7 @@ zoom.addEventListener("input", () => {
   applyView();
 });
 
-// --- One Euro filter: гасит дрожание точек, но не добавляет лаг при быстром движении ---
-class OneEuro {
-  constructor() { this.x = null; this.dx = 0; this.t = null; }
-  static alpha(te, cutoff) { return 1 / (1 + 1 / (2 * Math.PI * cutoff) / te); }
-  reset() { this.x = null; }
-  filter(v, t, minCutoff, beta) {
-    if (this.x === null) { this.x = v; this.dx = 0; this.t = t; return v; }
-    const te = Math.max(t - this.t, 1e-3);
-    this.t = t;
-    const dx = (v - this.x) / te;
-    this.dx += OneEuro.alpha(te, 1) * (dx - this.dx);
-    const cutoff = minCutoff + beta * Math.abs(this.dx);
-    this.x += OneEuro.alpha(te, cutoff) * (v - this.x);
-    return this.x;
-  }
-}
-const filters = Array.from({ length: 478 * 3 }, () => new OneEuro());
-function resetFilters() { for (const f of filters) f.reset(); }
+const { filters, reset: resetFilters } = createFilters(478 * 3);
 
 // --- Гладкий рендер: Three.js, усреднённые нормали вершин (рисуем в offscreen-canvas, потом копируем в meshCanvas) ---
 const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
