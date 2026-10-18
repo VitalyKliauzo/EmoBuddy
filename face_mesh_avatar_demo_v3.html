@@ -60,6 +60,10 @@
     <input type="checkbox" id="toggleMesh" checked>
   </div>
   <div class="control-row">
+    <label for="toggleMeshPoints">Точки на лице</label>
+    <input type="checkbox" id="toggleMeshPoints">
+  </div>
+  <div class="control-row">
     <label for="toggleTeeth">Зубы</label>
     <input type="checkbox" id="toggleTeeth" checked>
   </div>
@@ -132,6 +136,7 @@ const toggleMesh = document.getElementById("toggleMesh");
 const toggleStatus = document.getElementById("toggleStatus");
 const toggleTeeth = document.getElementById("toggleTeeth");
 const toggleStable = document.getElementById("toggleStable");
+const toggleMeshPoints = document.getElementById("toggleMeshPoints");
 
 // Точки, не двигающиеся относительно черепа (кандидаты для осей головы); подсветка нужна для визуальной проверки
 const STABLE_POINTS = [
@@ -717,6 +722,14 @@ function renderLoop(faceLandmarker) {
       }
 
       if (toggleTeeth.checked) drawTeeth(meshCtx, zpts);
+      if (toggleMeshPoints.checked) {
+        meshCtx.fillStyle = "#00FF88";
+        for (const p of zpts) {
+          meshCtx.beginPath();
+          meshCtx.arc(p.x, p.y, 1.3, 0, 2 * Math.PI);
+          meshCtx.fill();
+        }
+      }
       if (toggleStable.checked) drawStable(meshCtx, zpts, 1, 1, 5);
     }
   } else {
