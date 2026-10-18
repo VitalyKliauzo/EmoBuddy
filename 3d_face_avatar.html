@@ -112,38 +112,38 @@
 <body>
 <main>
   <h1>3D Face Avatar</h1>
-  <p>Трёхмерный лисёнок с отслеживанием движений и мимики лица.</p>
+  <p>3D fox cub with head movement and facial expression tracking.</p>
 
   <div class="layout">
     <section class="panel">
       <div id="scene"></div>
 
-      <button id="start">Включить камеру</button>
-      <button id="stop" disabled>Остановить камеру</button>
-      <button id="demo">Демо</button>
+      <button id="start">Start camera</button>
+      <button id="stop" disabled>Stop camera</button>
+      <button id="demo">Demo</button>
 
       <label>
-        Усиление мимики:
+        Expression gain:
         <strong id="gainValue">1.8×</strong>
         <input id="gain" type="range"
                min="1" max="3" value="1.8" step="0.1">
       </label>
 
       <div id="status" class="status">
-        Нажмите «Включить камеру» или «Демо».
+        Click "Start camera" or "Demo".
       </div>
     </section>
 
     <aside class="panel">
-      <h3>Камера</h3>
+      <h3>Camera</h3>
       <video id="video" autoplay muted playsinline></video>
 
-      <h3>Мимика</h3>
+      <h3>Expression</h3>
       <div id="meters"></div>
 
       <p class="status">
-        Камера обрабатывается в браузере. Для её использования
-        откройте страницу через localhost или HTTPS.
+        The camera is processed in the browser. To use it,
+        open the page via localhost or HTTPS.
       </p>
     </aside>
   </div>
@@ -206,7 +206,7 @@ const rimLight = new THREE.PointLight(0xff905d, 35, 20);
 rimLight.position.set(-4, 2, -3);
 scene.add(rimLight);
 
-// Материалы
+// Materials
 
 const fur = new THREE.MeshStandardMaterial({
   color: "#e88b4b",
@@ -254,7 +254,7 @@ const mouthMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.7
 });
 
-// Создание объёмных объектов
+// Creating 3D objects
 
 function ellipsoid(parent, material, position, scale) {
   const mesh = new THREE.Mesh(
@@ -277,11 +277,11 @@ scene.add(avatar);
 const head = new THREE.Group();
 avatar.add(head);
 
-// Голова
+// Head
 
 ellipsoid(head, fur, [0, 0.1, 0], [1.45, 1.55, 1.05]);
 
-// Светлая область морды
+// Light muzzle area
 
 const muzzle = ellipsoid(
   head, lightFur,
@@ -289,12 +289,12 @@ const muzzle = ellipsoid(
   [0.91, 0.72, 0.35]
 );
 
-// Щёки
+// Cheeks
 
 ellipsoid(head, fur, [-1.05, -0.45, 0.24], [0.45, 0.55, 0.57]);
 ellipsoid(head, fur, [1.05, -0.45, 0.24], [0.45, 0.55, 0.57]);
 
-// Уши
+// Ears
 
 function createEar(x, side) {
   const ear = new THREE.Mesh(
@@ -319,7 +319,7 @@ function createEar(x, side) {
 createEar(-0.91, -1);
 createEar(0.91, 1);
 
-// Нос, рот и язык
+// Nose, mouth and tongue
 
 ellipsoid(
   head, lightFur,
@@ -345,7 +345,7 @@ const tongue = ellipsoid(
   [0.17, 0.02, 0.035]
 );
 
-// Глаза и брови
+// Eyes and eyebrows
 
 function createEye(x, side) {
   const group = new THREE.Group();
@@ -402,7 +402,7 @@ const cheekR = ellipsoid(
   [0.23, 0.13, 0.08]
 );
 
-// Параметры мимики
+// Expression parameters
 
 const state = {
   yaw: 0,
@@ -425,13 +425,13 @@ const state = {
 };
 
 const meterConfig = [
-  ["jawOpen", "Открытие рта"],
-  ["smileL", "Улыбка слева"],
-  ["smileR", "Улыбка справа"],
-  ["blinkL", "Моргание слева"],
-  ["blinkR", "Моргание справа"],
-  ["browL", "Бровь слева"],
-  ["browR", "Бровь справа"]
+  ["jawOpen", "Mouth open"],
+  ["smileL", "Smile left"],
+  ["smileR", "Smile right"],
+  ["blinkL", "Blink left"],
+  ["blinkR", "Blink right"],
+  ["browL", "Brow left"],
+  ["browR", "Brow right"]
 ];
 
 const meterNodes = {};
@@ -457,7 +457,7 @@ const clamp = (v, min = 0, max = 1) =>
 const smoothValue = (current, target, speed = 0.3) =>
   current + (target - current) * speed;
 
-// Применение мимики к аватару
+// Applying expression to the avatar
 
 function updateAvatar() {
   const gain = Number($("gain").value);
@@ -536,12 +536,12 @@ const video = $("video");
 
 async function startCamera() {
   $("start").disabled = true;
-  $("status").textContent = "Загрузка модели распознавания…";
+  $("status").textContent = "Loading recognition model…";
 
   try {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error(
-        "Камера недоступна. Откройте страницу через localhost или HTTPS."
+        "Camera unavailable. Open the page via localhost or HTTPS."
       );
     }
 
@@ -578,14 +578,14 @@ async function startCamera() {
 
     $("stop").disabled = false;
     $("status").textContent =
-      "Камера активна. Меняйте выражение лица.";
+      "Camera active. Change your facial expression.";
 
     tick();
 
   } catch (error) {
     console.error(error);
 
-    $("status").textContent = "Ошибка запуска: " + error.message;
+    $("status").textContent = "Startup error: " + error.message;
     $("start").disabled = false;
   }
 }
@@ -702,10 +702,10 @@ function stopCamera() {
 
   $("start").disabled = false;
   $("stop").disabled = true;
-  $("status").textContent = "Камера остановлена.";
+  $("status").textContent = "Camera stopped.";
 }
 
-// Демо-режим без камеры
+// Demo mode without camera
 
 function demoTick(time) {
   if (!demo) return;
@@ -749,7 +749,7 @@ function demoTick(time) {
   raf = requestAnimationFrame(demoTick);
 }
 
-// Рендеринг сцены
+// Scene rendering
 
 function animate() {
   requestAnimationFrame(animate);
@@ -778,17 +778,17 @@ $("demo").addEventListener("click", () => {
 
     demo = true;
     $("start").disabled = true;
-    $("demo").textContent = "Остановить демо";
-    $("status").textContent = "Демо-анимация без камеры.";
+    $("demo").textContent = "Stop demo";
+    $("status").textContent = "Demo animation without camera.";
 
     demoTick(performance.now());
   } else {
     demo = false;
     cancelAnimationFrame(raf);
 
-    $("demo").textContent = "Демо";
+    $("demo").textContent = "Demo";
     $("start").disabled = false;
-    $("status").textContent = "Демо остановлено.";
+    $("status").textContent = "Demo stopped.";
   }
 });
 

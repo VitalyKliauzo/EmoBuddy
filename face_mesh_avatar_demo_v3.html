@@ -20,19 +20,19 @@
 
 <div class="top">
 <div>
-  <h3>Лицо из полигонов (заливка по точкам)</h3>
+  <h3>Face from polygons (filled by points)</h3>
   <canvas id="meshCanvas" width="960" height="720"></canvas>
 </div>
 
 <div class="side">
 <div>
-  <h3>Камера + точки</h3>
+  <h3>Camera + points</h3>
   <div class="wrap" id="camWrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
   </div>
   <div class="hint">Wheel: zoom &middot; drag: pan &middot; double-click: reset</div>
-  <div id="status">Загрузка...</div>
+  <div id="status">Loading...</div>
 </div>
 
 <div id="controls"></div>
@@ -66,8 +66,8 @@ const {
 } = controls;
 
 
-// Текстура лица из avatars/face_v4.glb: UV вершины = положение точки на кадре, с которого сделана текстура.
-// Грузится лениво при первом включении; применяется и в плоском (canvas 2D), и в гладком (WebGL) режиме.
+// Face texture from avatars/face_v4.glb: vertex UV = point position in the frame the texture was taken from.
+// Loaded lazily on first enable; applied in both flat (canvas 2D) and smooth (WebGL) modes.
 let faceTex = null; // { img, w, h, uv }
 let faceTexLoading = false;
 async function loadFaceTexture() {
@@ -81,13 +81,13 @@ async function loadFaceTexture() {
     const img = head.material.map.image;
     faceTex = { img, w: img.width, h: img.height, uv: head.geometry.getAttribute("uv").array };
   } catch (e) {
-    statusEl.textContent = "Не удалось загрузить текстуру: " + e;
+    statusEl.textContent = "Failed to load texture: " + e;
     toggleTexture.checked = false;
   }
   faceTexLoading = false;
 }
 toggleTexture.addEventListener("change", () => { if (toggleTexture.checked) loadFaceTexture(); });
-if (toggleTexture.checked) loadFaceTexture(); // включена по умолчанию
+if (toggleTexture.checked) loadFaceTexture(); // enabled by default
 
 const applyStatusVisibility = () => {
   statusEl.style.display = toggleStatus.checked ? "block" : "none";
@@ -110,7 +110,7 @@ const cameraView = createCameraView({
 
 const { filters, reset: resetFilters } = createFilters(478 * 3);
 
-// Контуры глаз и радужка (FaceLandmarker отдаёт 478 точек: 468-472 правый глаз, 473-477 левый)
+// Eye contours and iris (FaceLandmarker returns 478 points: 468-472 right eye, 473-477 left eye)
 const EYES = [
   { contour: [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246], iris: 468, irisEdge: [469, 471] },
   { contour: [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398], iris: 473, irisEdge: [474, 476] }
@@ -125,10 +125,10 @@ const flatRenderer = createFlatRenderer({
 applyFaceColor();
 let lastPts = null, lastLandmarks = null;
 
-// --- Экспорт текущего кадра в GLB (аватар для TalkingHead: скелет + морфы + глаза + текстура) ---
+// --- Export the current frame to GLB (avatar for TalkingHead: skeleton + morphs + eyes + texture) ---
 async function exportGlb() {
-  if (!lastPts) { statusEl.textContent = "Нет лица в кадре (или выключены полигоны) - нечего экспортировать"; return; }
-  statusEl.textContent = "Собираю GLB...";
+  if (!lastPts) { statusEl.textContent = "No face in frame (or polygons are off) - nothing to export"; return; }
+  statusEl.textContent = "Building GLB...";
   const [{ GLTFExporter }, { buildAvatarScene }] = await Promise.all([
     import("three/addons/exporters/GLTFExporter.js"),
     import("/src/avatarGlb.js")
@@ -139,7 +139,7 @@ async function exportGlb() {
   lastPts.forEach((p, i) => { pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = -p.z; });
   smoothRenderer.computeNormals(pos, nor, n);
 
-  // масштаб: ширина лица (точки 234-454) = 0.15 м; центр модели - среднее по вершинам; y вверх (в экране он вниз)
+  // scale: face width (points 234-454) = 0.15 m; model center - mean over vertices; y up (down on screen)
   const L = lastPts[234], R = lastPts[454];
   const k = 0.15 / (Math.hypot(L.x - R.x, L.y - R.y, L.z - R.z) || 1);
   let cx = 0, cy = 0, cz = 0;
@@ -152,11 +152,11 @@ async function exportGlb() {
     nor[i*3+1] = -nor[i*3+1];
   }
 
-  // UV = положение точки на кадре камеры (0..1, начало слева сверху - как в glTF)
+  // UV = point position in the camera frame (0..1, origin top-left - as in glTF)
   const uv = new Float32Array(n * 2);
   lastLandmarks.forEach((l, i) => { uv[i*2] = l.x; uv[i*2+1] = l.y; });
 
-  // текстура = текущий кадр камеры без зеркалирования (отзеркален только CSS-ом)
+  // texture = current camera frame without mirroring (mirrored only by CSS)
   const texCanvas = document.createElement("canvas");
   texCanvas.width = video.videoWidth; texCanvas.height = video.videoHeight;
   texCanvas.getContext("2d").drawImage(video, 0, 0);
@@ -171,8 +171,8 @@ async function exportGlb() {
     const a = document.createElement("a");
     a.href = url; a.download = "face.glb"; a.click();
     URL.revokeObjectURL(url);
-    statusEl.textContent = `GLB сохранён (${(buffer.byteLength / 1048576).toFixed(1)} МБ): аватар для TalkingHead, текстура ${texCanvas.width}x${texCanvas.height}. Положите файл в avatars/`;
-  }, (err) => { statusEl.textContent = "Ошибка экспорта GLB: " + err; }, { binary: true });
+    statusEl.textContent = `GLB saved (${(buffer.byteLength / 1048576).toFixed(1)} MB): avatar for TalkingHead, texture ${texCanvas.width}x${texCanvas.height}. Put the file in avatars/`;
+  }, (err) => { statusEl.textContent = "GLB export error: " + err; }, { binary: true });
 }
 exportGlbBtn.addEventListener("click", exportGlb);
 
@@ -223,7 +223,7 @@ async function main() {
   });
 
   TRIANGLES = resolveTriangles();
-  statusEl.textContent = `Восстановлено треугольников: ${TRIANGLES.length}`;
+  statusEl.textContent = `Restored triangles: ${TRIANGLES.length}`;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
@@ -255,7 +255,7 @@ function renderLoop(faceLandmarker) {
       const W = meshCanvas.width;
       const H = meshCanvas.height;
       const t = performance.now() / 1000;
-      // сила 0..1 -> minCutoff от 8 Гц (слабо) до 0.3 Гц (сильно)
+      // strength 0..1 -> minCutoff from 8 Hz (weak) to 0.3 Hz (strong)
       const minCutoff = 8 * Math.pow(0.3 / 8, +filterStrength.value);
       const smooth = (v, i) => toggleFilter.checked ? filters[i].filter(v, t, minCutoff, 0.015) : v;
       const pts = landmarks.map((p, i) => ({

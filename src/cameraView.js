@@ -1,7 +1,7 @@
-// Обрезка/зум камеры: квадратное окно (x0, y0, размер 1/z) в нормализованных координатах видео.
-// Обрезает картинку с камеры, а отрисованное лицо отображается через то же окно.
-//   camWrap - обёртка (колесо = зум, перетаскивание = сдвиг, двойной клик = сброс); video, canvas - что обрезаем
-//   zoom - слайдер зума; resetButton - кнопка сброса
+// Camera crop/zoom: a square window (x0, y0, size 1/z) in normalized video coordinates.
+// Crops the camera image, and the rendered face is displayed through the same window.
+//  camWrap - wrapper (wheel = zoom, drag = pan, double click = reset); video, canvas - what gets cropped
+//  zoom - zoom slider; resetButton - reset button
 export function createCameraView({ camWrap, video, canvas, zoom, resetButton }) {
   const view = { z: 1, x0: 0, y0: 0 };
   function applyView() {
@@ -52,12 +52,12 @@ export function createCameraView({ camWrap, video, canvas, zoom, resetButton }) 
     applyView();
   });
 
-  // стартовый зум берём из слайдера, окно по центру
+  // initial zoom is taken from the slider, window centered
   view.z = +zoom.value;
   view.x0 = view.y0 = 0.5 - 0.5 / view.z;
   applyView();
 
-  // Отображает точки (в пикселях меша W x H) через окно обрезки; без обрезки возвращает их как есть
+  // Maps points (in mesh pixels W x H) through the crop window; without cropping returns them as is
   function mapPoints(pts, W, H) {
     const zk = view.z;
     if (zk === 1 && view.x0 === 0 && view.y0 === 0) return pts;

@@ -1,10 +1,10 @@
 import * as THREE from "three";
 
-// Жёсткое совмещение (Horn/Umeyama): находит поворот q, масштаб s и сдвиг c, при которых ref_i -> c + s * q * ref_i
-// лучше всего (по МНК) ложатся на cur_i. Шум отдельных точек усредняется по всему набору, а не определяет ось целиком.
-// ref - центрированные векторы (центроид 0), cur - текущие позиции; обе списки одной длины.
+// Rigid fit (Horn/Umeyama): finds rotation q, scale s and shift c such that ref_i -> c + s * q * ref_i
+// best (least squares) matches cur_i. Noise of individual points is averaged over the whole set instead of defining the axis alone.
+// ref - centered vectors (centroid 0), cur - current positions; both lists of equal length.
 
-// Собственный вектор симметричной 4x4 матрицы с наибольшим собственным значением (метод Якоби)
+// Eigenvector of a symmetric 4x4 matrix with the largest eigenvalue (Jacobi method)
 function topEigenvector(M) {
   const A = M.map(r => r.slice()), V = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
   for (let sweep = 0; sweep < 20; sweep++) {

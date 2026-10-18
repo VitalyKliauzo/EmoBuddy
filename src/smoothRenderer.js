@@ -2,13 +2,13 @@ import * as THREE from "three";
 import { addLights, createRigidTeeth, keepNormals, MOUTH_HOLE } from "./rigidTeeth.js";
 import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 
-// Гладкий рендер лица в Three.js: усреднённые нормали вершин, текстура лица, глаза в 3D-сцене.
-// Рисует в offscreen-канвас WebGL и копирует кадр в 2D-контекст meshCanvas.
-//   eyes         - описание контуров глаз (EYES)
-//   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
+// Smooth face render in Three.js: averaged vertex normals, face texture, eyes in the 3D scene.
+// Draws into an offscreen WebGL canvas and copies the frame to the meshCanvas 2D context.
+//  eyes         - eye contour description (EYES)
+//  getTriangles - () => mesh triangles; getFaceTex - () => loaded face texture or null
 export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
   const { shadowGradient, normalSmooth, toggleTexture, toggleEyes, eyeStyle, toggleTeeth, teethStyle, toggleCavity, cavityColor, cavityDepth } = controls;
-  // --- Гладкий рендер: Three.js, усреднённые нормали вершин (рисуем в offscreen-canvas, потом копируем в meshCanvas) ---
+  // --- Smooth render: Three.js, averaged vertex normals (drawn to an offscreen canvas, then copied to meshCanvas) ---
   const meshCtx = meshCanvas.getContext("2d");
   const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
   glRenderer.setSize(meshCanvas.width, meshCanvas.height, false);
@@ -20,27 +20,27 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
   const glMaterial = new THREE.MeshPhongMaterial({ color: 0xd9a68a, shininess: 10, specular: 0x000000, side: THREE.DoubleSide });
   keepNormals(glMaterial);
   let faceColorHex = "#d9a68a";
-  // Базовый цвет лица; при включённой текстуре цвет белый, и этот восстанавливается после её выключения
+  // Base face color; with the texture on the color is white, and this one is restored when it is turned off
   function setFaceColor(c) {
     faceColorHex = c;
     if (!glMaterial.map) glMaterial.color.set(c);
   }
 
   let glMesh = null, neighbors = null, tmpNor = null;
-  const indexCache = new Map(), holeKey = { eyes: false, mouth: false }; // индексы меша: с отверстиями под глазные яблоки / рот и без них
+  const indexCache = new Map(), holeKey = { eyes: false, mouth: false }; // mesh indices: with / without holes for eyeballs / mouth
 
-  // Считает сглаженные нормали вершин по массиву позиций pos (x вправо, y вниз, z к камере) -> nor
+  // Computes smoothed vertex normals from the pos array (x right, y down, z toward camera) -> nor
   function computeNormals(pos, nor, count) {
     nor.fill(0);
     for (const [ia, ib, ic] of getTriangles()) {
       const ux = pos[ib*3] - pos[ia*3], uy = pos[ib*3+1] - pos[ia*3+1], uz = pos[ib*3+2] - pos[ia*3+2];
       const vx = pos[ic*3] - pos[ia*3], vy = pos[ic*3+1] - pos[ia*3+1], vz = pos[ic*3+2] - pos[ia*3+2];
       let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-      if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; } // ориентируем нормали к камере
+      if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; } // orient normals toward the camera
       for (const i of [ia, ib, ic]) { nor[i*3] += nx; nor[i*3+1] += ny; nor[i*3+2] += nz; }
     }
-    // Нормали по z у MediaPipe шумные, поэтому соседние треугольники сильно различаются.
-    // Размываем нормали по соседним вершинам (несколько проходов) -> плавные градиенты.
+    // MediaPipe z normals are noisy, so neighboring triangles differ strongly.
+    // Blur normals across neighboring vertices (several passes) -> smooth gradients.
     if (!neighbors) {
       neighbors = Array.from({ length: count }, () => new Set());
       for (const [a, b, c] of getTriangles()) {
@@ -64,7 +64,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     }
   }
 
-  // Включает/выключает текстуру лица на WebGL-материале (UV ставятся один раз - они не меняются по кадрам)
+  // Turns the face texture on/off on the WebGL material (UVs are set once - they don't change between frames)
   let glTexture = null;
   function syncGlTexture(pts) {
     const want = toggleTexture.checked && getFaceTex();
@@ -88,7 +88,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     glMaterial.needsUpdate = true;
   }
 
-  // Жёсткие 3D-зубы: в меше лица вырезается рот, зубы и полость рисуются в сцене
+  // Rigid 3D teeth: the mouth is cut out of the face mesh, teeth and cavity are drawn in the scene
   const rigidTeeth = createRigidTeeth(glScene, keepNormals);
   const rigidTeethOn = () => toggleTeeth.checked && teethStyle.value === "rigid";
   function meshIndex(eyesHoled, mouthHoled) {
@@ -121,7 +121,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     }
     const pos = glMesh.geometry.attributes.position.array;
     const nor = glMesh.geometry.attributes.normal.array;
-    // ближе к камере = больше z в сцене, поэтому инвертируем z MediaPipe
+    // closer to the camera = larger z in the scene, so MediaPipe z is inverted
     pts.forEach((p, i) => { pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = -p.z; });
     computeNormals(pos, nor, pts.length);
     glMesh.geometry.attributes.position.needsUpdate = true;
@@ -132,9 +132,9 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     meshCtx.drawImage(glRenderer.domElement, 0, 0, meshCanvas.width, meshCanvas.height);
   }
 
-  // Глаза в smooth-режиме рисуются в 3D-сцене на плоскости контура глаза, поэтому нос и веки перекрывают их через depth-тест.
-  // Белок пишет stencil только там, где он виден; радужка и зрачок рисуются только внутри этого stencil.
-  const EYE_BIAS = 3; // небольшой сдвиг к камере, чтобы глаз не терялся внутри поверхности меша
+  // In smooth mode the eyes are drawn in the 3D scene on the eye contour plane, so the nose and eyelids occlude them via the depth test.
+  // The sclera writes stencil only where it is visible; the iris and pupil are drawn only inside that stencil.
+  const EYE_BIAS = 3; // small shift toward the camera so the eye doesn't get lost inside the mesh surface
   const stencilBase = { side: THREE.DoubleSide, stencilWrite: true, stencilRef: 1 };
   const eyeMats = {
     white: new THREE.MeshBasicMaterial({ ...stencilBase, color: 0xf4f4f4, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }),
@@ -165,8 +165,8 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     };
   });
 
-  // Глазные яблоки (eyeStyle = "ball"): сфера за плоскостью век + шапки радужки и зрачка, повёрнутые по взгляду.
-  // Меш лица без треугольников глаз, поэтому яблоко видно только через отверстие; освещение общее с лицом.
+  // Eyeballs (eyeStyle = "ball"): a sphere behind the eyelid plane + iris and pupil caps rotated by the gaze.
+  // The face mesh has no eye triangles, so the eyeball is visible only through the hole; lighting is shared with the face.
   const ballMats = {
     sclera: new THREE.MeshLambertMaterial({ color: 0xf4f4f4, side: THREE.DoubleSide }),
     iris: new THREE.MeshLambertMaterial({ color: 0x3a7bd5, side: THREE.DoubleSide }),
@@ -175,7 +175,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
   Object.values(ballMats).forEach(keepNormals);
   const ballCap = (radius, angle, mat) => {
     const g = new THREE.SphereGeometry(radius, 32, 8, 0, Math.PI * 2, 0, angle);
-    g.rotateX(Math.PI / 2); // полюс шапки -> +z
+    g.rotateX(Math.PI / 2); // cap pole -> +z
     return new THREE.Mesh(g, mat);
   };
   const glBalls = EYES.map(() => {
@@ -210,7 +210,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
       let cx = 0, cy = 0, cz = 0;
       for (const p of ring) { cx += p.x; cy += p.y; cz += -p.z; }
       cx /= n; cy /= n; cz /= n;
-      // плоскость z = cz + gx*dx + gy*dy по МНК: радужка лежит на ней и не "проваливается" в меш при повороте головы
+      // plane z = cz + gx*dx + gy*dy by least squares: the iris lies on it and does not "sink" into the mesh when the head turns
       let sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
       for (const p of ring) {
         const dx = p.x - cx, dy = p.y - cy, dz = -p.z - cz;

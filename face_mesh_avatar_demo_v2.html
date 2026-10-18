@@ -17,16 +17,16 @@
 <body>
 
 <div>
-  <h3>Камера + точки</h3>
+  <h3>Camera + landmarks</h3>
   <div class="wrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
   </div>
-  <div id="status">Загрузка...</div>
+  <div id="status">Loading...</div>
 </div>
 
 <div>
-  <h3>Маска лица (триангуляция по точкам)</h3>
+  <h3>Face mask (triangulation by landmarks)</h3>
   <canvas id="meshCanvas" width="480" height="360"></canvas>
 </div>
 
@@ -40,17 +40,17 @@ const meshCanvas = document.getElementById("meshCanvas");
 const meshCtx = meshCanvas.getContext("2d");
 const statusEl = document.getElementById("status");
 
-// Пытаемся достать список связей/треугольников из библиотеки в любом из
-// известных форматов. Разные версии @mediapipe/tasks-vision отдают его
-// либо как плоский массив индексов [a,b,c,a,b,c,...], либо как массив
-// объектов {start, end} (пары точек контура, не треугольники).
+// Try to get the list of connections/triangles from the library in any of the
+// known formats. Different versions of @mediapipe/tasks-vision return it
+// either as a flat index array [a,b,c,a,b,c,...] or as an array of
+// {start, end} objects (outline point pairs, not triangles).
 let TRIANGLES = [];
 let mode = "none";
 
 function tryBuildFromFlatArray(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return null;
   if (typeof arr[0] === "number") {
-    // плоский массив индексов, по 3 на треугольник
+    // flat index array, 3 per triangle
     const tris = [];
     for (let i = 0; i + 2 < arr.length; i += 3) {
       tris.push([arr[i], arr[i+1], arr[i+2]]);
@@ -63,7 +63,7 @@ function tryBuildFromFlatArray(arr) {
 function tryBuildFromConnections(arr) {
   if (!Array.isArray(arr) || arr.length === 0) return null;
   if (typeof arr[0] === "object" && arr[0] !== null && "start" in arr[0] && "end" in arr[0]) {
-    // это пары точек (рёбра контура), не треугольники — вернём как рёбра
+    // these are point pairs (outline edges), not triangles — return them as edges
     return arr.map(c => [c.start, c.end]);
   }
   return null;
@@ -102,7 +102,7 @@ async function main() {
   });
 
   TRIANGLES = resolveTopology();
-  statusEl.textContent = `Режим отрисовки: ${mode}. Связей/треугольников найдено: ${TRIANGLES.length}.`;
+  statusEl.textContent = `Render mode: ${mode}. Connections/triangles found: ${TRIANGLES.length}.`;
 
   const stream = await navigator.mediaDevices.getUserMedia({ video: true });
   video.srcObject = stream;
@@ -168,8 +168,8 @@ function renderLoop(faceLandmarker) {
         meshCtx.fill();
       }
     } else {
-      // запасной режим: просто все точки, без соединений —
-      // хотя бы видно, что трекинг работает, пока разбираемся с форматом связей
+      // fallback mode: just all the landmarks, no connections —
+      // at least it shows that tracking works while we sort out the connection format
       meshCtx.fillStyle = "#00FF88";
       for (const p of pts) {
         meshCtx.beginPath();

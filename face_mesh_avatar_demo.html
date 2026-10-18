@@ -16,7 +16,7 @@
 <body>
 
 <div>
-  <h3>Камера + точки</h3>
+  <h3>Camera + landmarks</h3>
   <div class="wrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
@@ -24,7 +24,7 @@
 </div>
 
 <div>
-  <h3>Маска лица (триангуляция по точкам)</h3>
+  <h3>Face mask (triangulation by landmarks)</h3>
   <canvas id="meshCanvas" width="480" height="360"></canvas>
 </div>
 
@@ -37,8 +37,8 @@ const ctx = canvas.getContext("2d");
 const meshCanvas = document.getElementById("meshCanvas");
 const meshCtx = meshCanvas.getContext("2d");
 
-// Официальный список треугольников MediaPipe (индексы точек, тройками).
-// Это стандартная триангуляция лица из 478 точек.
+// Official MediaPipe triangle list (landmark indices, in triples).
+// This is the standard face triangulation of 478 landmarks.
 const TRIANGULATION = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
 
 async function main() {
@@ -69,7 +69,7 @@ function renderLoop(faceLandmarker) {
   if (result.faceLandmarks && result.faceLandmarks.length > 0) {
     const landmarks = result.faceLandmarks[0];
 
-    // точки поверх видео
+    // landmarks over the video
     ctx.fillStyle = "#00FF88";
     for (const p of landmarks) {
       ctx.beginPath();
@@ -77,11 +77,11 @@ function renderLoop(faceLandmarker) {
       ctx.fill();
     }
 
-    // переводим нормализованные координаты в пиксели канваса маски
+    // convert normalized coordinates to mask canvas pixels
     const pts = landmarks.map(p => ({ x: p.x * meshCanvas.width, y: p.y * meshCanvas.height, z: p.z }));
 
-    // сортируем треугольники по средней глубине (z), чтобы дальние рисовались первыми —
-    // простое псевдо-затенение по глубине для объёма
+    // sort triangles by average depth (z) so distant ones are drawn first —
+    // simple pseudo-shading by depth for volume
     const tris = [];
     for (let i = 0; i < TRIANGULATION.length; i += 3) {
       const a = pts[TRIANGULATION[i]], b = pts[TRIANGULATION[i+1]], c = pts[TRIANGULATION[i+2]];
@@ -92,7 +92,7 @@ function renderLoop(faceLandmarker) {
     tris.sort((t1, t2) => t1.avgZ - t2.avgZ);
 
     for (const t of tris) {
-      // цвет зависит от глубины: ближе к камере — светлее, дальше — темнее
+      // color depends on depth: closer to the camera is lighter, farther is darker
       const depth = Math.max(0, Math.min(1, (t.avgZ + 0.05) / 0.1));
       const shade = Math.floor(80 + (1 - depth) * 140);
       meshCtx.fillStyle = `rgb(${shade - 30}, ${shade}, ${shade + 20})`;

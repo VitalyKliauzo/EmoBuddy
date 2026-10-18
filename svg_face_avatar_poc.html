@@ -37,13 +37,13 @@
 </head>
 <body>
 <main>
-  <h1>SVG-аватар с мимикой в реальном времени</h1>
-  <p class="sub">POC: камера → MediaPipe Face Landmarker → параметры лица → выразительный SVG-лисёнок.</p>
+  <h1>Real-time SVG avatar with facial expressions</h1>
+  <p class="sub">POC: camera → MediaPipe Face Landmarker → face parameters → expressive SVG fox cub.</p>
   <div class="layout">
     <section>
       <div class="panel stage">
         <span class="tag">SVG avatar · live</span>
-        <svg id="avatar" viewBox="0 0 600 600" role="img" aria-label="Анимированный SVG-лисёнок">
+        <svg id="avatar" viewBox="0 0 600 600" role="img" aria-label="Animated SVG fox cub">
           <defs>
             <radialGradient id="fur" cx="34%" cy="22%" r="80%"><stop offset="0" stop-color="#ffd99b"/><stop offset=".48" stop-color="#f49a54"/><stop offset="1" stop-color="#a94d36"/></radialGradient>
             <linearGradient id="ear" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffcc8b"/><stop offset="1" stop-color="#b94c3d"/></linearGradient>
@@ -102,21 +102,21 @@
       </div>
       <div class="panel" style="margin-top:14px">
         <div class="controls">
-          <button id="start">Включить камеру</button>
-          <button id="stop" class="secondary" disabled>Остановить</button>
-          <button id="demo" class="secondary">Демо-анимация</button>
+          <button id="start">Start camera</button>
+          <button id="stop" class="secondary" disabled>Stop</button>
+          <button id="demo" class="secondary">Demo animation</button>
         </div>
-        <div id="status" class="status">Нажмите «Включить камеру». Камера работает локально в браузере.</div>
-        <label class="sliderline">Усиление мимики <input id="gain" type="range" min="1" max="2.5" step=".1" value="1.7"><span id="gainValue">1.7×</span></label>
-        <div class="switchrow"><input id="mirror" type="checkbox" checked><label for="mirror">Зеркальное отображение аватара</label></div>
-        <p class="note">Для доступа к камере откройте страницу через HTTPS или localhost. При первом запуске браузер запросит разрешение. Видеопоток не отправляется на сервер.</p>
+        <div id="status" class="status">Click "Start camera". The camera runs locally in the browser.</div>
+        <label class="sliderline">Expression gain <input id="gain" type="range" min="1" max="2.5" step=".1" value="1.7"><span id="gainValue">1.7×</span></label>
+        <div class="switchrow"><input id="mirror" type="checkbox" checked><label for="mirror">Mirror the avatar</label></div>
+        <p class="note">To access the camera, open the page via HTTPS or localhost. On first launch the browser will ask for permission. The video stream is not sent to a server.</p>
       </div>
     </section>
     <aside class="panel">
-      <h2 style="margin:0 0 12px;font-size:1.1rem">Камера</h2>
+      <h2 style="margin:0 0 12px;font-size:1.1rem">Camera</h2>
       <video id="video" autoplay muted playsinline></video>
       <div class="meters" id="meters"></div>
-      <p class="note">Отображаются ключевые blendshape-параметры MediaPipe. Поворот головы оценивается по лицевым ориентирам; выразительность аватара намеренно усилена.</p>
+      <p class="note">Key MediaPipe blendshape parameters are shown. Head rotation is estimated from facial landmarks; the avatar's expressiveness is intentionally boosted.</p>
     </aside>
   </div>
 </main>
@@ -127,9 +127,9 @@ const $ = id => document.getElementById(id);
 const video = $("video"), status = $("status"), head = $("head");
 const tracked = ["jawOpen","mouthSmileLeft","mouthSmileRight","mouthFrownLeft","mouthFrownRight","browInnerUp","browOuterUpLeft","browOuterUpRight","eyeBlinkLeft","eyeBlinkRight","eyeSquintLeft","eyeSquintRight","eyeWideLeft","eyeWideRight","cheekSquintLeft","cheekSquintRight","mouthPucker","mouthPressLeft","mouthPressRight"];
 const meterNames = {
-  jawOpen:"Рот открыт", mouthSmileLeft:"Улыбка L", mouthSmileRight:"Улыбка R",
-  browInnerUp:"Брови вверх", eyeBlinkLeft:"Моргание L", eyeBlinkRight:"Моргание R",
-  eyeSquintLeft:"Прищур L", eyeSquintRight:"Прищур R", eyeWideLeft:"Глаза широко", mouthPucker:"Губы трубочкой"
+  jawOpen:"Mouth open", mouthSmileLeft:"Smile L", mouthSmileRight:"Smile R",
+  browInnerUp:"Brows up", eyeBlinkLeft:"Blink L", eyeBlinkRight:"Blink R",
+  eyeSquintLeft:"Squint L", eyeSquintRight:"Squint R", eyeWideLeft:"Eyes wide", mouthPucker:"Lips pursed"
 };
 const meters = {};
 for (const name of tracked) {
@@ -206,9 +206,9 @@ function render(result) {
   }
 }
 async function start() {
-  $("start").disabled=true; status.textContent="Загрузка модели распознавания лица…";
+  $("start").disabled=true; status.textContent="Loading face recognition model…";
   try {
-    if(!navigator.mediaDevices?.getUserMedia) throw new Error("Камера недоступна. Откройте страницу через HTTPS или localhost.");
+    if(!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable. Open the page via HTTPS or localhost.");
     const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
     landmarker=await FaceLandmarker.createFromOptions(vision,{
       baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},
@@ -216,10 +216,10 @@ async function start() {
     });
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
     video.srcObject=stream; await video.play(); running=true; demo=false;
-    $("stop").disabled=false; $("demo").disabled=true; status.textContent="Камера активна. Двигайте головой и меняйте выражение лица.";
+    $("stop").disabled=false; $("demo").disabled=true; status.textContent="Camera active. Move your head and change your expression.";
     tick();
   } catch(e) {
-    console.error(e); status.textContent="Не удалось запустить камеру/модель: "+(e.message||e);
+    console.error(e); status.textContent="Failed to start camera/model: "+(e.message||e);
     $("start").disabled=false; $("demo").disabled=false;
   }
 }
@@ -236,7 +236,7 @@ function stop() {
   if(stream) stream.getTracks().forEach(t=>t.stop());
   video.srcObject=null; stream=null;
   $("start").disabled=false; $("stop").disabled=true; $("demo").disabled=false;
-  status.textContent="Камера остановлена.";
+  status.textContent="Camera stopped.";
 }
 function demoTick(t) {
   if(!demo)return;
@@ -249,7 +249,7 @@ function demoTick(t) {
 }
 $("start").addEventListener("click",start);
 $("stop").addEventListener("click",stop);
-$("demo").addEventListener("click",()=>{demo=!demo;if(demo){running=false;status.textContent="Демо-анимация без камеры."; $("demo").textContent="Остановить демо";$("start").disabled=true;demoTick(performance.now())}else{cancelAnimationFrame(raf);$("demo").textContent="Демо-анимация";$("start").disabled=false;status.textContent="Демо остановлено."}});
+$("demo").addEventListener("click",()=>{demo=!demo;if(demo){running=false;status.textContent="Demo animation without camera."; $("demo").textContent="Stop demo";$("start").disabled=true;demoTick(performance.now())}else{cancelAnimationFrame(raf);$("demo").textContent="Demo animation";$("start").disabled=false;status.textContent="Demo stopped."}});
 $("gain").addEventListener("input",()=>{$("gainValue").textContent=Number($("gain").value).toFixed(1)+"×"});
 window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop())});
 </script>

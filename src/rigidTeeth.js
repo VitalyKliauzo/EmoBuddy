@@ -2,37 +2,37 @@ import * as THREE from "three";
 import { fitRigid } from "./rigidFit.js";
 import { STABLE_POINTS } from "./stablePoints.js";
 
-// Жёсткие 3D-зубы для гладкого рендера (аналог глазных яблок): две неизменяемые дуги зубов + тёмная полость рта.
-// Форма зубов не зависит от текущего раскрытия/растяжения рта - по кадрам меняется только положение и поворот дуг:
-//   верхняя дуга жёстко привязана к черепу (совмещение неподвижных точек), нижняя - к нижней челюсти (совмещение точек подбородка и
-//   линии челюсти); масштаб обеих берётся от черепа.
-// Меш лица в режиме "rigid" без треугольников внутри рта; зубы существуют всегда и видны только там, где губы открыты.
-// Координаты сцены: x вправо, y вниз, z к камере (z MediaPipe инвертирован).
+// Rigid 3D teeth for the smooth render (analogous to eyeballs): two immutable tooth arches + a dark mouth cavity.
+// Tooth shape doesn't depend on the current mouth opening/stretch - only arch position and rotation change per frame:
+//  the upper arch is rigidly bound to the skull (fit of stable points), the lower one to the lower jaw (fit of chin and
+//  jaw line points); the scale of both comes from the skull.
+// In "rigid" mode the face mesh has no triangles inside the mouth; teeth always exist and are visible only where the lips are open.
+// Scene coordinates: x right, y down, z toward camera (MediaPipe z is inverted).
 
-// Внутренний контур губ по кругу: верхняя дуга слева направо, затем нижняя справа налево
+// Inner lip contour in a loop: upper arc left to right, then lower arc right to left
 const MOUTH_LOOP = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
 export const MOUTH_HOLE = new Set(MOUTH_LOOP);
 
-const MW = 0.36;                                   // ширина рта в нейтральном положении, в долях ширины лица
-// Ширины и высоты зубов от середины к краю (доли MW): резцы, клык, премоляры, моляры. 8 зубов на сторону = 16 на челюсть.
-// Обе челюсти целиком наклонены вокруг поперечной оси (шарнир - передние зубы): задние зубы поднимаются сильно, передние чуть-чуть
-// (одинаково у верхней и нижней, чтобы прикус сохранял общую плоскость смыкания)
-const TILT_PITCH = 12 * Math.PI / 180, TILT_FRONT_LIFT = 0.03; // угол наклона; подъём передних зубов (доли MW)
-const WIDEN = 1.4; // зубы в 1.4 раза шире исходных
+const MW = 0.36;                                   // mouth width in neutral pose, as a fraction of face width
+// Tooth widths and heights from center to edge (fractions of MW): incisors, canine, premolars, molars. 8 teeth per side = 16 per jaw.
+// Both jaws are tilted as a whole around the transverse axis (hinge = front teeth): rear teeth rise a lot, front ones slightly
+// (same for upper and lower, so the bite keeps a common closing plane)
+const TILT_PITCH = 12 * Math.PI / 180, TILT_FRONT_LIFT = 0.03; // tilt angle; front teeth lift (fractions of MW)
+const WIDEN = 1.4; // teeth are 1.4 times wider than the original
 const WIDTHS = [0.105, 0.085, 0.09, 0.08, 0.08, 0.1, 0.1, 0.1].map(w => w * WIDEN);
 const TEETH = {
   up: { w: WIDTHS, h: [0.17, 0.14, 0.15, 0.12, 0.11, 0.1, 0.1, 0.1] },
   low: { w: WIDTHS, h: [0.12, 0.12, 0.13, 0.11, 0.1, 0.1, 0.1, 0.1] }
 };
-const ARCH_R = 0.35;                               // радиус дуги, вдоль которой стоят зубы (доли MW); меньше - круче загиб к краям
-const SETBACK = 0.2;                               // отступ зубов вглубь от плоскости губ
-const CLOSED = 0.05, CALIB_FRAMES = 45, REF_FRAMES = 30; // рот закрыт при раскрытии < CLOSED ширины рта; кадров усреднения привязки и эталона
-const LOWER_DROP = 0.12;                           // нижняя дуга опущена вниз примерно на длину зуба относительно линии губ (доли MW)
-const EDGE_UP = 0.04, EDGE_LOW = 0.03 - LOWER_DROP;             // на сколько режущий край заходит за линию губ (при закрытом рте зубы смыкаются внахлёст на сумму, а не по всей длине)
-const CAVITY_DEPTH = 0.16, CAVITY_BACK = 0.22;      // глубина боковых стенок и дна полости (доли ширины лица)
+const ARCH_R = 0.35;                               // radius of the arc the teeth stand along (fractions of MW); smaller - sharper bend toward the edges
+const SETBACK = 0.2;                               // teeth setback into depth from the lip plane
+const CLOSED = 0.05, CALIB_FRAMES = 45, REF_FRAMES = 30; // mouth is closed when opening < CLOSED of mouth width; frames for averaging the binding and the reference
+const LOWER_DROP = 0.12;                           // lower arch is dropped down by about a tooth length relative to the lip line (fractions of MW)
+const EDGE_UP = 0.04, EDGE_LOW = 0.03 - LOWER_DROP;             // how far the cutting edge goes past the lip line (with a closed mouth the teeth overlap by the sum, not by the full length)
+const CAVITY_DEPTH = 0.16, CAVITY_BACK = 0.22;      // depth of the cavity side walls and floor (fractions of face width)
 
-// Направление обхода у восстановленных треугольников произвольное, а DoubleSide в Three.js инвертирует нормаль у "обратных" граней -
-// отсюда шахматный узор. Нормали мы ориентируем к камере сами, поэтому отключаем эту инверсию.
+// Winding direction of the restored triangles is arbitrary, and DoubleSide in Three.js flips the normal of "back" faces -
+// hence the checkerboard pattern. We orient normals toward the camera ourselves, so we disable this flip.
 export function keepNormals(material) {
   material.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -42,8 +42,8 @@ export function keepNormals(material) {
   };
 }
 
-// Освещение сцены, общее для гладкого рендера и зубов поверх плоского: ambient 25% + направленный свет 75% (в Three.js интенсивность
-// умножается на PI). Коэффициент градиента теней = доля направленного света; ambient = 1 - коэффициент (яркость лицом к камере прежняя)
+// Scene lighting shared by the smooth render and the teeth over the flat one: ambient 25% + directional light 75% (in Three.js intensity
+// is multiplied by PI). Shadow gradient coefficient = directional light share; ambient = 1 - coefficient (face-on brightness stays the same)
 export function addLights(scene, shadowGradient) {
   const ambient = new THREE.AmbientLight(0xffffff, Math.PI * 0.25);
   const key = new THREE.DirectionalLight(0xffffff, Math.PI * 0.75);
@@ -52,7 +52,7 @@ export function addLights(scene, shadowGradient) {
   const apply = () => {
     const k = +shadowGradient.value;
     key.intensity = Math.PI * k;
-    ambient.intensity = Math.PI * Math.max(0, 1 - k); // при k > 1 ambient = 0, свет только усиливается -> контрастнее
+    ambient.intensity = Math.PI * Math.max(0, 1 - k); // at k > 1 ambient = 0, light only gets stronger -> more contrast
   };
   shadowGradient.addEventListener("input", apply);
   apply();
@@ -70,23 +70,23 @@ function toothGeo(w, h) {
   return g;
 }
 
-// Дуга зубов в системе рта (единица = MW, y вниз): режущий край верхних на EDGE_UP ниже точки (0,0,0), нижних на EDGE_LOW выше неё (отрицательное - ниже)
+// Tooth arch in the mouth system (unit = MW, y down): cutting edge of upper teeth EDGE_UP below point (0,0,0), lower ones EDGE_LOW above it (negative - below)
 function archGeo(up) {
   const parts = [], { w: widths, h: heights } = up ? TEETH.up : TEETH.low;
   const quarter = ARCH_R * Math.PI / 2;
-  // Путь по длине дуги s: четверть окружности радиуса ARCH_R спереди, дальше ряд идёт прямо назад (U-образная дуга)
+  // Path along arc length s: a quarter circle of radius ARCH_R at the front, then the row goes straight back (U-shaped arch)
   const path = (s) => s <= quarter
     ? { x: ARCH_R * Math.sin(s / ARCH_R), z: -ARCH_R * (1 - Math.cos(s / ARCH_R)), th: s / ARCH_R }
     : { x: ARCH_R, z: -ARCH_R - (s - quarter), th: Math.PI / 2 };
-  // Наклон всей челюсти (отрицательный угол вокруг X: чем глубже зуб по -z, тем выше он по -y) + подъём вперёд
+  // Tilt of the whole jaw (negative angle around X: the deeper the tooth along -z, the higher along -y) + forward lift
   const tilt = new THREE.Matrix4();
   tilt.makeTranslation(0, -TILT_FRONT_LIFT, 0).multiply(new THREE.Matrix4().makeTranslation(0, 0, -SETBACK))
     .multiply(new THREE.Matrix4().makeRotationX(-TILT_PITCH)).multiply(new THREE.Matrix4().makeTranslation(0, 0, SETBACK));
   for (const side of [1, -1]) {
-    let arc = 0; // длина дуги от середины
+    let arc = 0; // arc length from the center
     widths.forEach((w, i) => {
       const h = heights[i];
-      const { x, z, th } = path(arc + w / 2); // зубы стоят вплотную вдоль дуги, касательная задаёт поворот
+      const { x, z, th } = path(arc + w / 2); // teeth stand tightly along the arc, the tangent sets the rotation
       const y = up ? EDGE_UP - h / 2 : -EDGE_LOW + h / 2;
       const g = toothGeo(w, h);
       g.applyMatrix4(new THREE.Matrix4().makeRotationY(side * th).setPosition(side * x, y, -SETBACK + z));
@@ -105,7 +105,7 @@ function archGeo(up) {
   return geo;
 }
 
-/** @returns {{update(pts, visible)}} - добавляет в glScene зубы и полость; update вызывается каждый кадр */
+/** @returns {{update(pts, visible)}} - adds teeth and cavity to glScene; update is called every frame */
 export function createRigidTeeth(glScene, keepNormals) {
   const toothMat = new THREE.MeshLambertMaterial({ color: 0xf6f3ea, side: THREE.DoubleSide });
   keepNormals(toothMat);
@@ -118,7 +118,7 @@ export function createRigidTeeth(glScene, keepNormals) {
     return mesh;
   });
 
-  // Полость: боковые стенки от контура губ вглубь + дно (веер)
+  // Cavity: side walls from the lip contour inward + floor (fan)
   const n = MOUTH_LOOP.length;
   const cavGeo = new THREE.BufferGeometry();
   cavGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((2 * n + 1) * 3), 3));
@@ -133,11 +133,11 @@ export function createRigidTeeth(glScene, keepNormals) {
   cavity.renderOrder = 4;
   glScene.add(cavity);
 
-  // --- Привязка к жёстким телам: жёсткое совмещение набора точек с эталонной конфигурацией (rigidFit.js) ---
-  // Череп - неподвижные точки (stablePoints.js), нижняя челюсть - точки подбородка и линии челюсти. Эталон тела (центрирован,
-  // RMS = 1) усредняется по первым REF_FRAMES кадрам; дальше каждый кадр даёт поворот q, масштаб s и сдвиг c тела.
+  // --- Binding to rigid bodies: rigid fit of a point set to a reference configuration (rigidFit.js) ---
+  // Skull - stable points (stablePoints.js), lower jaw - chin and jaw line points. Body reference (centered,
+  // RMS = 1) is averaged over the first REF_FRAMES frames; after that each frame gives the body rotation q, scale s and shift c.
   const SKULL_IDS = STABLE_POINTS.flatMap(g => g.ids);
-  // только нижняя часть подбородка (низ челюсти под нижней губой), без линии челюсти у ушей
+  // only the lower part of the chin (jaw bottom under the lower lip), without the jaw line by the ears
   const JAW_IDS = [152, 175, 199, 200, 18, 83, 313, 148, 377, 176, 400, 171, 396, 140, 369, 149, 378];
   const qInv = new THREE.Quaternion(), tmp = new THREE.Vector3();
   function createBody(ids) {
@@ -154,12 +154,12 @@ export function createRigidTeeth(glScene, keepNormals) {
     return {
       ids,
       get ready() { return n >= REF_FRAMES; },
-      refDist: (a, b) => ref[ids.indexOf(a)].distanceTo(ref[ids.indexOf(b)]), // расстояние в единицах эталона
+      refDist: (a, b) => ref[ids.indexOf(a)].distanceTo(ref[ids.indexOf(b)]), // distance in reference units
       fit(pts) {
         ids.forEach((id, i) => cur[i].set(pts[id].x, pts[id].y, -pts[id].z));
         if (!ref) { ref = cur.map(v => v.clone()); normalize(); n = 1; }
         const f = fitRigid(ref, cur);
-        if (n < REF_FRAMES) { // прогрев: уточняем эталон, выровняв текущий кадр на него
+        if (n < REF_FRAMES) { // warm-up: refine the reference by aligning the current frame to it
           qInv.copy(f.q).invert();
           cur.forEach((v, i) => ref[i].multiplyScalar(n).add(tmp.copy(v).sub(f.c).applyQuaternion(qInv).divideScalar(f.s)).divideScalar(n + 1));
           normalize();
@@ -171,10 +171,10 @@ export function createRigidTeeth(glScene, keepNormals) {
   }
   const skull = createBody(SKULL_IDS), jaw = createBody(JAW_IDS);
 
-  // Нижняя челюсть как шарнир: вращается вокруг поперечной оси через височно-нижнечелюстной сустав (ВНЧС), закреплённый в системе черепа.
-  // Угол берётся из смещения центра подбородка относительно положения при закрытом рте (устойчивее, чем поворот по малому облаку точек
-  // подбородка, который почти не видит вращения). Результат - поза тела челюсти (q, s, c) в том же виде, что у rigidFit.
-  const HINGE_BACK = 0.25, HINGE_DOWN = 0.1;          // положение сустава относительно середины между щеками (доли ширины лица)
+  // Lower jaw as a hinge: rotates around a transverse axis through the temporomandibular joint (TMJ), fixed in the skull frame.
+  // The angle comes from the chin center offset relative to its closed-mouth position (more robust than rotation from the small chin
+  // point cloud, which barely sees the rotation). The result is the jaw body pose (q, s, c) in the same form as rigidFit's.
+  const HINGE_BACK = 0.25, HINGE_DOWN = 0.1;          // joint position relative to the midpoint between the cheeks (fractions of face width)
   const hinge = { pv: null, axis: null, rest: null, n: 0 };
   const chinW = new THREE.Vector3(), chinL = new THREE.Vector3(), va = new THREE.Vector3(), vb = new THREE.Vector3();
   const toLocal = (v, f) => v.sub(f.c).applyQuaternion(qInv.copy(f.q).invert()).divideScalar(f.s);
@@ -205,8 +205,8 @@ export function createRigidTeeth(glScene, keepNormals) {
   const jawPose = { c: new THREE.Vector3(), q: new THREE.Quaternion(), s: 1 };
   let faceRef = 1;
 
-  // Привязка дуги к телу: положение (в эталонных единицах тела) и поворот относительно тела. Усредняется по первым CALIB_FRAMES
-  // кадров с закрытым ртом (губы лежат на зубах); до первого закрытого кадра берётся текущий; потом дуга неподвижна относительно тела.
+  // Arch binding to the body: position (in body reference units) and rotation relative to the body. Averaged over the first CALIB_FRAMES
+  // frames with a closed mouth (lips rest on the teeth); before the first closed frame the current one is used; then the arch is fixed relative to the body.
   function createAnchor() {
     let p = null, q = null, closedN = 0;
     return {
@@ -233,18 +233,18 @@ export function createRigidTeeth(glScene, keepNormals) {
   const X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3();
 
   function update(pts, visible, cavityVisible = true, cavityDepth = 1, cavityColor = null) {
-    const show = visible && pts.length > 454; // зубы есть всегда; закрытый рот прячет их за губами (depth-тест)
+    const show = visible && pts.length > 454; // teeth always exist; a closed mouth hides them behind the lips (depth test)
     arches.forEach(m => { m.visible = show; });
     cavity.visible = show && cavityVisible;
     if (cavityColor) cavity.material.color.set(cavityColor);
     if (!show) return;
 
     const skullFit = skull.fit(pts);
-    jaw.fit(pts); // только уточняет эталон тела челюсти (RMS-масштаб); поза берётся из шарнира
+    jaw.fit(pts); // only refines the jaw body reference (RMS scale); the pose comes from the hinge
     const ready = skull.ready && jaw.ready;
     if (ready && faceRef === 1) faceRef = skull.refDist(234, 454);
 
-    // Система губ (нужна только для ориентации и привязки в закрытом рте): X - щека->щека, Y - лоб->подбородок, Z = X x Y
+    // Lip system (needed only for orientation and binding in a closed mouth): X - cheek->cheek, Y - forehead->chin, Z = X x Y
     X.copy(sub(pts[454], pts[234])).normalize();
     Y.copy(sub(pts[152], pts[10]));
     Y.addScaledVector(X, -Y.dot(X)).normalize();
@@ -255,7 +255,7 @@ export function createRigidTeeth(glScene, keepNormals) {
     const S = ready ? skullFit.s * faceRef : Math.hypot(pts[454].x - pts[234].x, pts[454].y - pts[234].y, pts[454].z - pts[234].z) || 1;
     const sc = new THREE.Vector3().setScalar(S * MW);
 
-    if (!ready) { // пока эталоны не готовы - дуги едут за губами
+    if (!ready) { // until the references are ready the arches follow the lips
       arches[0].matrix.compose(p13, lipQ, sc);
       arches[1].matrix.compose(p14, lipQ, sc);
     } else {

@@ -2,22 +2,22 @@ import * as THREE from "three";
 import { addLights, createRigidTeeth, keepNormals, MOUTH_HOLE } from "./rigidTeeth.js";
 import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 
-// Плоский 2D-рендер лица на canvas: треугольники сортируются по глубине (painter's algorithm), глаза - вместе с ними.
-//   eyes         - описание контуров глаз (EYES)
-//   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
+// Flat 2D face render on canvas: triangles are depth-sorted (painter's algorithm), eyes are sorted together with them.
+//  eyes         - eye contour description (EYES)
+//  getTriangles - () => mesh triangles; getFaceTex - () => loaded face texture or null
 export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
   const { toggleTexture, toggleEyes, eyeStyle, toggleTeeth, teethStyle, toggleCavity, cavityColor, cavityDepth } = controls;
   const holeSets = eyeHoleSets(EYES);
   const c = meshCanvas.getContext("2d");
-  const faceRGB = { r: 0, g: 0, b: 0 }; // базовый цвет лица
+  const faceRGB = { r: 0, g: 0, b: 0 }; // base face color
 
-  /** hex вида "#rrggbb" */
+  /** hex like "#rrggbb" */
   function setFaceColor(hex) {
     faceRGB.r = parseInt(hex.slice(1, 3), 16); faceRGB.g = parseInt(hex.slice(3, 5), 16); faceRGB.b = parseInt(hex.slice(5, 7), 16);
   }
 
-  // Жёсткие 3D-зубы поверх плоского рендера: отдельная прозрачная WebGL-сцена. Лицо в ней - только буфер глубины (цвет не пишется),
-  // поэтому закрытые губы, нос и т.п. скрывают зубы, а рот в 2D-меше вырезан, и зубы с полостью видны сквозь него.
+  // Rigid 3D teeth over the flat render: a separate transparent WebGL scene. The face in it is only a depth buffer (no color written),
+  // so closed lips, nose, etc. hide the teeth, while the mouth is cut out of the 2D mesh and the teeth with the cavity show through it.
   const rigidTeethOn = () => toggleTeeth.checked && teethStyle.value === "rigid";
   let gl = null;
   function initGl() {
@@ -51,7 +51,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     c.drawImage(gl.renderer.domElement, 0, 0, meshCanvas.width, meshCanvas.height);
   }
 
-  // Аффинное отображение треугольника текстуры на экранный треугольник + затемнение по освещённости
+  // Affine mapping of a texture triangle onto a screen triangle + shading by lighting
   function drawTexturedTri(c, f, tex, light) {
     const { uv, w, h } = tex;
     const u0 = uv[f.ia*2]*w, v0 = uv[f.ia*2+1]*h, u1 = uv[f.ib*2]*w, v1 = uv[f.ib*2+1]*h, u2 = uv[f.ic*2]*w, v2 = uv[f.ic*2+1]*h;
@@ -64,7 +64,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
       return [k, l, p0 - k*u0 - l*v0];
     };
     const [a, c2, e] = m(A.x, B.x, C.x), [b, d, g] = m(A.y, B.y, C.y);
-    // клип чуть расширен от центра, чтобы между соседними треугольниками не было щелей
+    // clip is expanded slightly from the center so there are no gaps between neighboring triangles
     const cx = (A.x+B.x+C.x)/3, cy = (A.y+B.y+C.y)/3;
     const grow = p => { const dx = p.x-cx, dy = p.y-cy, L = Math.hypot(dx, dy) || 1; return [p.x + dx/L*0.6, p.y + dy/L*0.6]; };
     const path = () => {
@@ -83,7 +83,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     }
   }
 
-  // Глазное яблоко: сфера за плоскостью век, видна через контур глаза; радужка - эллипс, повёрнутый в сторону взгляда
+  // Eyeball: a sphere behind the eyelid plane, visible through the eye contour; the iris is an ellipse rotated toward the gaze
   function drawEyeBall(c, pts, eye) {
     if (!pts[eye.iris] || !pts[eye.contour[0]]) return;
     const { center, r, gaze } = eyeBall(pts, eye);
@@ -96,13 +96,13 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     c.closePath();
     c.clip();
 
-    // белок: освещение ~ cos угла между нормалью сферы и осью камеры
+    // sclera: lighting ~ cos of the angle between the sphere normal and the camera axis
     const g = c.createRadialGradient(center.x, center.y, 0, center.x, center.y, r);
     for (const s of [0, 0.5, 0.8, 0.95, 1]) g.addColorStop(s, shade("#f4f4f4", light(Math.sqrt(1 - s * s))));
     c.fillStyle = g;
     c.beginPath(); c.arc(center.x, center.y, r, 0, 2 * Math.PI); c.fill();
 
-    // радужка и зрачок: круг на сфере вокруг направления взгляда -> эллипс, сжатый вдоль направления наклона
+    // iris and pupil: a circle on the sphere around the gaze direction -> an ellipse compressed along the tilt direction
     const px = center.x + gaze.x * r, py = center.y + gaze.y * r;
     const rot = Math.atan2(gaze.y, gaze.x), flatten = Math.abs(gaze.z), lit = light(gaze.z);
     for (const [ratio, color] of [[IRIS_RATIO, "#3a7bd5"], [IRIS_RATIO * PUPIL_RATIO, "#000000"]]) {
@@ -131,7 +131,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     c.fillStyle = "#f4f4f4";
     c.fill();
 
-    // радужка и зрачок следуют за реальной позицией радужки с камеры; обрезаем по контуру глаза
+    // iris and pupil follow the real iris position from the camera; clipped by the eye contour
     c.save();
     path();
     c.clip();
@@ -156,7 +156,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     const faces = [];
     const eyesShown = zpts.length > 477 && toggleEyes.checked;
     const mouthHoled = rigidTeethOn();
-    const holes = eyesShown && eyeStyle.value === "ball"; // под глазные яблоки в меше вырезаются отверстия
+    const holes = eyesShown && eyeStyle.value === "ball"; // holes for the eyeballs are cut in the mesh
     for (const [ia, ib, ic] of getTriangles()) {
       if (holes && holeSets.some(s => s.has(ia) && s.has(ib) && s.has(ic))) continue;
       const a = zpts[ia], b = zpts[ib], c = zpts[ic];
@@ -175,7 +175,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     }
 
     if (eyesShown) for (const eye of EYES) {
-      // глаз сортируется вместе с треугольниками: нос и другие ближние грани рисуются поверх него
+      // the eye is sorted together with the triangles: nose and other near faces are drawn over it
       const ring = eye.contour.map(i => zpts[i]);
       const w = Math.hypot(ring[0].x - ring[8].x, ring[0].y - ring[8].y);
       faces.push({ eye, avgZ: ring.reduce((s, p) => s + p.z, 0) / ring.length - w * 0.15 });

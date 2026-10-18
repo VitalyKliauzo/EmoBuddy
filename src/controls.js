@@ -1,4 +1,4 @@
-// Панель управления: стили, разметка и ссылки на её элементы. Логику, которую панель переключает, держит вызывающий код.
+// Control panel: styles, markup and references to its elements. The logic the panel toggles is held by the calling code.
 
 const CSS = `
   #controls {
@@ -26,98 +26,98 @@ const CSS = `
 `;
 
 const HTML = `
-  <h4>Управление</h4>
+  <h4>Controls</h4>
   <details class="control-group" open>
-    <summary>Отображение</summary>
+    <summary>Display</summary>
     <div class="control-row">
-      <label for="togglePoints">Точки на камере</label>
+      <label for="togglePoints">Points on camera</label>
       <input type="checkbox" id="togglePoints">
     </div>
     <div class="control-row">
-      <label for="toggleMeshPoints">Точки на лице</label>
+      <label for="toggleMeshPoints">Points on face</label>
       <input type="checkbox" id="toggleMeshPoints">
     </div>
     <div class="control-row">
-      <label for="toggleStable">Неподвижные точки</label>
+      <label for="toggleStable">Stable points</label>
       <input type="checkbox" id="toggleStable">
     </div>
     <div class="control-row">
-      <label for="toggleMesh">Полигоны лица</label>
+      <label for="toggleMesh">Face polygons</label>
       <input type="checkbox" id="toggleMesh" checked>
     </div>
     <div class="control-row">
-      <label for="toggleTexture">Текстура лица (face_v4)</label>
+      <label for="toggleTexture">Face texture (face_v4)</label>
       <input type="checkbox" id="toggleTexture" checked>
     </div>
     <div class="control-row">
-      <label for="toggleStatus">Строка статуса</label>
+      <label for="toggleStatus">Status line</label>
       <input type="checkbox" id="toggleStatus">
     </div>
   </details>
   <details class="control-group">
-    <summary>Рендер</summary>
+    <summary>Render</summary>
     <div class="control-row">
-      <label for="renderMode">Рендер</label>
+      <label for="renderMode">Render</label>
       <select id="renderMode">
-        <option value="flat">Плоский (2D)</option>
-        <option value="smooth" selected>Гладкий (WebGL)</option>
+        <option value="flat">Flat (2D)</option>
+        <option value="smooth" selected>Smooth (WebGL)</option>
       </select>
     </div>
     <div class="control-row">
-      <label for="faceColor">Цвет лица</label>
+      <label for="faceColor">Face color</label>
       <input type="color" id="faceColor" value="#d9a68a">
     </div>
     <div class="control-row">
-      <label for="normalSmooth">Гладкость нормалей</label>
+      <label for="normalSmooth">Normal smoothness</label>
       <input type="range" id="normalSmooth" min="0" max="12" step="1" value="7" style="width:90px">
     </div>
     <div class="control-row">
-      <label for="shadowGradient">Градиент теней</label>
+      <label for="shadowGradient">Shadow gradient</label>
       <input type="range" id="shadowGradient" min="0" max="3" step="0.05" value="0.5" style="width:90px">
     </div>
   </details>
   <details class="control-group">
-    <summary>Глаза</summary>
+    <summary>Eyes</summary>
     <div class="control-row">
-      <label for="toggleEyes">Глаза</label>
+      <label for="toggleEyes">Eyes</label>
       <input type="checkbox" id="toggleEyes" checked>
     </div>
     <div class="control-row">
-      <label for="eyeStyle">Вид глаз</label>
+      <label for="eyeStyle">Eye style</label>
       <select id="eyeStyle">
-        <option value="flat">Плоские</option>
-        <option value="ball" selected>Глазные яблоки</option>
+        <option value="flat">Flat</option>
+        <option value="ball" selected>Eyeballs</option>
       </select>
     </div>
   </details>
   <details class="control-group">
-    <summary>Рот</summary>
+    <summary>Mouth</summary>
     <div class="control-row">
-      <label for="toggleTeeth">Зубы</label>
+      <label for="toggleTeeth">Teeth</label>
       <input type="checkbox" id="toggleTeeth" checked>
     </div>
     <div class="control-row">
-      <label for="teethStyle">Вид зубов</label>
+      <label for="teethStyle">Teeth style</label>
       <select id="teethStyle">
-        <option value="rigid" selected>Жёсткие 3D</option>
-        <option value="stretch">Растягиваются по губам</option>
+        <option value="rigid" selected>Rigid 3D</option>
+        <option value="stretch">Stretch with lips</option>
       </select>
     </div>
     <div class="control-row">
-      <label for="toggleCavity">Полость рта</label>
+      <label for="toggleCavity">Mouth cavity</label>
       <input type="checkbox" id="toggleCavity" checked>
     </div>
     <div class="control-row">
-      <label for="cavityColor">Цвет полости рта</label>
+      <label for="cavityColor">Mouth cavity color</label>
       <input type="color" id="cavityColor" value="#3b0d14">
     </div>
     <div class="control-row">
-      <label for="cavityDepth">Глубина полости</label>
+      <label for="cavityDepth">Cavity depth</label>
       <input type="range" id="cavityDepth" min="0" max="2" step="0.05" value="1" style="width:90px">
     </div>
   </details>
   <details class="control-group">
-    <summary>Камера</summary>
+    <summary>Camera</summary>
     <div class="control-row">
       <label for="zoom">Zoom</label>
       <input type="range" id="zoom" min="1" max="5" step="0.05" value="2.6" style="width:90px">
@@ -127,23 +127,23 @@ const HTML = `
     </div>
   </details>
   <details class="control-group">
-    <summary>Сглаживание точек</summary>
+    <summary>Point smoothing</summary>
     <div class="control-row">
-      <label for="toggleFilter">Сглаживание точек</label>
+      <label for="toggleFilter">Point smoothing</label>
       <input type="checkbox" id="toggleFilter" checked>
     </div>
     <div class="control-row">
-      <label for="filterStrength">Сила</label>
+      <label for="filterStrength">Strength</label>
       <input type="range" id="filterStrength" min="0" max="1" step="0.05" value="0.6" style="width:90px">
     </div>
   </details>
   <details class="control-group">
-    <summary>Действия</summary>
+    <summary>Actions</summary>
     <div class="control-row">
       <button id="refreshPage" type="button">Refresh</button>
     </div>
     <div class="control-row">
-      <button id="exportGlb" type="button">Скачать GLB</button>
+      <button id="exportGlb" type="button">Download GLB</button>
     </div>
   </details>
 `;
@@ -154,7 +154,7 @@ const IDS = [
   "toggleFilter", "filterStrength"
 ];
 
-/** Рисует панель внутри `mount` и возвращает { id: element } для её элементов управления. */
+/** Renders the panel inside `mount` and returns { id: element } for its controls. */
 export function createControls(mount) {
   const style = document.createElement("style");
   style.textContent = CSS;

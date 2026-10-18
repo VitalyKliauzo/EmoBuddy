@@ -17,7 +17,7 @@
 <body>
 
 <div>
-  <h3>Камера + точки</h3>
+  <h3>Camera + landmarks</h3>
   <div class="wrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
@@ -25,26 +25,26 @@
 </div>
 
 <div>
-  <h3>Мультяшный аватар (усиленная амплитуда)</h3>
+  <h3>Cartoon avatar (boosted amplitude)</h3>
   <div id="avatarBox">
     <svg id="avatarSvg" width="480" height="480" viewBox="0 0 480 480">
       <g id="headGroup">
-        <!-- уши -->
+        <!-- ears -->
         <circle cx="110" cy="130" r="38" fill="#ffd79a" stroke="#c99a5b" stroke-width="4"/>
         <circle cx="370" cy="130" r="38" fill="#ffd79a" stroke="#c99a5b" stroke-width="4"/>
 
-        <!-- голова -->
+        <!-- head -->
         <ellipse cx="240" cy="230" rx="150" ry="160" fill="#ffd79a" stroke="#c99a5b" stroke-width="4"/>
 
-        <!-- румянец -->
+        <!-- blush -->
         <ellipse id="cheekLeft" cx="150" cy="260" rx="22" ry="14" fill="#ff9d9d" opacity="0.6"/>
         <ellipse id="cheekRight" cx="330" cy="260" rx="22" ry="14" fill="#ff9d9d" opacity="0.6"/>
 
-        <!-- брови: толстые, подвижные, с крупной амплитудой -->
+        <!-- eyebrows: thick, mobile, with large amplitude -->
         <path id="browLeft" d="M 130 155 Q 170 135 215 155" stroke="#5a3b1e" stroke-width="14" fill="none" stroke-linecap="round"/>
         <path id="browRight" d="M 265 155 Q 310 135 350 155" stroke="#5a3b1e" stroke-width="14" fill="none" stroke-linecap="round"/>
 
-        <!-- глаза: веки сверху и снизу, зрачок двигается -->
+        <!-- eyes: upper and lower eyelids, the pupil moves -->
         <g id="eyeLeftGroup">
           <ellipse cx="175" cy="210" rx="34" ry="34" fill="#fff" stroke="#333" stroke-width="3"/>
           <circle id="pupilLeft" cx="175" cy="210" r="14" fill="#3a2a1a"/>
@@ -60,10 +60,10 @@
           <path id="lidBotRight" d="M 271 210 Q 305 244 339 210 L 339 210 Q 305 224 271 210 Z" fill="#ffd79a"/>
         </g>
 
-        <!-- нос -->
+        <!-- nose -->
         <ellipse id="nose" cx="240" cy="255" rx="14" ry="10" fill="#e8ad6b" stroke="#c99a5b" stroke-width="2"/>
 
-        <!-- рот: крупный, с управляемыми уголками и раскрытием -->
+        <!-- mouth: large, with controllable corners and opening -->
         <path id="mouth" d="M 190 320 Q 240 330 290 320 Q 240 330 190 320 Z" fill="#7a2f2f" stroke="#5a1f1f" stroke-width="3"/>
         <path id="tongue" d="M 220 325 Q 240 338 260 325 Z" fill="#c75c5c" opacity="0"/>
       </g>
@@ -90,8 +90,8 @@ const nose = el("nose");
 const cheekLeft = el("cheekLeft"), cheekRight = el("cheekRight");
 const headGroup = el("headGroup");
 
-// Коэффициент усиления — ключевое отличие от прошлой версии:
-// амплитуду движений умножаем, чтобы даже слабое выражение было заметным.
+// Gain factor — the key difference from the previous version:
+// the motion amplitude is multiplied so even a faint expression is noticeable.
 const AMP = 1.6;
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const boost = (v) => clamp01(v * AMP);
@@ -104,7 +104,7 @@ function lerpPath(pathA, pathB, t) {
   return pathA.replace(/-?\d+(\.\d+)?/g, () => mixed[idx++]);
 }
 
-// Опорные формы бровей: нейтраль, поднятая (крупно), нахмуренная вниз-к-переносице
+// Eyebrow reference shapes: neutral, raised (large), furrowed down toward the nose bridge
 const BROW_L = {
   neutral: "M 130 155 Q 170 135 215 155",
   raised:  "M 125 140 Q 170 95  220 140",
@@ -157,7 +157,7 @@ function renderLoop(faceLandmarker) {
 
     const bs = result.faceBlendshapes;
 
-    // --- Брови: подъём и нахмуривание, раздельно по сторонам ---
+    // --- Eyebrows: raise and furrow, separately per side ---
     const browUpL = boost(getBlendshape(bs, "browOuterUpLeft"));
     const browUpR = boost(getBlendshape(bs, "browOuterUpRight"));
     const browDown = boost(getBlendshape(bs, "browDownLeft") + getBlendshape(bs, "browDownRight"));
@@ -170,7 +170,7 @@ function renderLoop(faceLandmarker) {
         ? lerpPath(BROW_R.neutral, BROW_R.furrow, browDown)
         : lerpPath(BROW_R.neutral, BROW_R.raised, browUpR));
 
-    // --- Глаза: моргание веками (не просто сжатие эллипса) ---
+    // --- Eyes: blinking with eyelids (not just squashing the ellipse) ---
     const blinkL = boost(getBlendshape(bs, "eyeBlinkLeft"));
     const blinkR = boost(getBlendshape(bs, "eyeBlinkRight"));
     const wideL = boost(getBlendshape(bs, "eyeWideLeft"));
@@ -180,7 +180,7 @@ function renderLoop(faceLandmarker) {
     lidTopRight.setAttribute("transform", `translate(0, ${blinkR*34})`);
     lidBotRight.setAttribute("transform", `translate(0, ${-blinkR*34})`);
 
-    // --- Взгляд: зрачки следуют за направлением глаз ---
+    // --- Gaze: pupils follow the eye direction ---
     const lookL = getBlendshape(bs, "eyeLookOutLeft") - getBlendshape(bs, "eyeLookInLeft");
     const lookR = getBlendshape(bs, "eyeLookOutRight") - getBlendshape(bs, "eyeLookInRight");
     const lookUp = getBlendshape(bs, "eyeLookUpLeft") - getBlendshape(bs, "eyeLookDownLeft");
@@ -189,7 +189,7 @@ function renderLoop(faceLandmarker) {
     pupilRight.setAttribute("cx", 305 + lookR * 14);
     pupilRight.setAttribute("cy", 210 - lookUp * 14);
 
-    // --- Рот: открытие, улыбка (растяжение уголков), поджатие ---
+    // --- Mouth: opening, smile (corner stretch), pursing ---
     const jawOpen = boost(getBlendshape(bs, "jawOpen"));
     const smile = boost(getBlendshape(bs, "mouthSmileLeft") + getBlendshape(bs, "mouthSmileRight"));
     const pucker = boost(getBlendshape(bs, "mouthPucker"));
@@ -200,17 +200,17 @@ function renderLoop(faceLandmarker) {
       `M ${240-widthAmount} ${320-cornerLift} Q 240 ${320+openAmount} ${240+widthAmount} ${320-cornerLift} Q 240 ${320+openAmount*0.3} ${240-widthAmount} ${320-cornerLift} Z`);
     tongue.setAttribute("opacity", jawOpen > 0.5 ? 0.9 : 0);
 
-    // --- Щёки: надувание ---
+    // --- Cheeks: puffing ---
     const puff = boost(getBlendshape(bs, "cheekPuff"));
     cheekLeft.setAttribute("rx", 22 + puff * 15);
     cheekRight.setAttribute("rx", 22 + puff * 15);
 
-    // --- Нос: сморщивание ---
+    // --- Nose: wrinkling ---
     const sneer = boost(getBlendshape(bs, "noseSneerLeft") + getBlendshape(bs, "noseSneerRight"));
     nose.setAttribute("ry", 10 - sneer * 4);
     nose.setAttribute("cy", 255 - sneer * 6);
 
-    // --- Наклон и поворот головы, тоже с усилением ---
+    // --- Head tilt and turn, also with gain ---
     let tiltDeg = 0, turnDeg = 0;
     if (result.facialTransformationMatrixes && result.facialTransformationMatrixes.length > 0) {
       const m = result.facialTransformationMatrixes[0].data;

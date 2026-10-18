@@ -1,4 +1,4 @@
-// One Euro filter: гасит дрожание точек, но не добавляет лаг при быстром движении
+// One Euro filter: suppresses point jitter without adding lag on fast motion
 export class OneEuro {
   constructor() { this.x = null; this.dx = 0; this.t = null; }
   static alpha(te, cutoff) { return 1 / (1 + 1 / (2 * Math.PI * cutoff) / te); }
@@ -15,7 +15,7 @@ export class OneEuro {
   }
 }
 
-/** Набор из `count` независимых фильтров (по одному на координату) и функция сброса всех сразу. */
+/** A set of `count` independent filters (one per coordinate) and a function that resets them all at once. */
 export function createFilters(count) {
   const filters = Array.from({ length: count }, () => new OneEuro());
   return { filters, reset() { for (const f of filters) f.reset(); } };

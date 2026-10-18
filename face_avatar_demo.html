@@ -16,7 +16,7 @@
 <body>
 
 <div>
-  <h3>Камера + точки</h3>
+  <h3>Camera + landmarks</h3>
   <div class="wrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
@@ -24,30 +24,30 @@
 </div>
 
 <div>
-  <h3>Аватар (маппинг в реальном времени)</h3>
+  <h3>Avatar (real-time mapping)</h3>
   <div id="avatarBox">
     <svg id="avatarSvg" width="480" height="360" viewBox="0 0 480 360">
-      <!-- голова -->
+      <!-- head -->
       <g id="headGroup">
         <ellipse cx="240" cy="190" rx="130" ry="140" fill="#ffd79a" stroke="#c99a5b" stroke-width="3"/>
 
-        <!-- левая бровь (экранно слева) -->
+        <!-- left eyebrow (left on screen) -->
         <path id="browLeft" d="M 150 120 Q 180 105 210 120" stroke="#5a3b1e" stroke-width="8" fill="none" stroke-linecap="round"/>
-        <!-- правая бровь -->
+        <!-- right eyebrow -->
         <path id="browRight" d="M 270 120 Q 300 105 330 120" stroke="#5a3b1e" stroke-width="8" fill="none" stroke-linecap="round"/>
 
-        <!-- левый глаз -->
+        <!-- left eye -->
         <ellipse id="eyeLeft" cx="180" cy="160" rx="22" ry="14" fill="#fff" stroke="#333" stroke-width="2"/>
         <circle cx="180" cy="160" r="7" fill="#333"/>
 
-        <!-- правый глаз -->
+        <!-- right eye -->
         <ellipse id="eyeRight" cx="300" cy="160" rx="22" ry="14" fill="#fff" stroke="#333" stroke-width="2"/>
         <circle cx="300" cy="160" r="7" fill="#333"/>
 
-        <!-- нос -->
+        <!-- nose -->
         <path d="M 240 170 L 232 210 Q 240 218 248 210 Z" fill="#e8ad6b" stroke="#c99a5b" stroke-width="2"/>
 
-        <!-- рот: путь будем морфить между закрытым и открытым -->
+        <!-- mouth: the path is morphed between closed and open -->
         <path id="mouth" d="M 200 255 Q 240 265 280 255 Q 240 265 200 255" fill="#7a2f2f" stroke="#5a1f1f" stroke-width="2"/>
       </g>
     </svg>
@@ -70,16 +70,16 @@ const eyeRight = document.getElementById("eyeRight");
 const mouth = document.getElementById("mouth");
 const headGroup = document.getElementById("headGroup");
 
-// Опорные (нейтральные) и предельные формы, заданные вручную —
-// это и есть "нулевое состояние" и "амплитуда", как ты описывал.
+// Reference (neutral) and extreme shapes, defined by hand —
+// these are the "zero state" and the "amplitude".
 const BROW_L_NEUTRAL = "M 150 120 Q 180 105 210 120";
 const BROW_L_RAISED  = "M 150 110 Q 180 80  210 110";
 const BROW_R_NEUTRAL = "M 270 120 Q 300 105 330 120";
 const BROW_R_RAISED  = "M 270 110 Q 300 80  330 110";
 
 function lerpPath(pathA, pathB, t) {
-  // Простая интерполяция: парсим числа из двух путей одинаковой структуры
-  // и линейно смешиваем их по t (0..1).
+  // Simple interpolation: parse numbers from two paths of identical structure
+  // and blend them linearly by t (0..1).
   const numsA = pathA.match(/-?\d+(\.\d+)?/g).map(Number);
   const numsB = pathB.match(/-?\d+(\.\d+)?/g).map(Number);
   const mixed = numsA.map((a, i) => a + (numsB[i] - a) * t);
@@ -133,28 +133,28 @@ function renderLoop(faceLandmarker) {
 
     const bs = result.faceBlendshapes;
 
-    // --- Брови ---
+    // --- Eyebrows ---
     const browUpL = getBlendshape(bs, "browOuterUpLeft") || getBlendshape(bs, "browInnerUp");
     const browUpR = getBlendshape(bs, "browOuterUpRight") || getBlendshape(bs, "browInnerUp");
     browLeft.setAttribute("d", lerpPath(BROW_L_NEUTRAL, BROW_L_RAISED, browUpL));
     browRight.setAttribute("d", lerpPath(BROW_R_NEUTRAL, BROW_R_RAISED, browUpR));
 
-    // --- Глаза (прищур/закрытие) ---
+    // --- Eyes (squint/close) ---
     const blinkL = getBlendshape(bs, "eyeBlinkLeft");
     const blinkR = getBlendshape(bs, "eyeBlinkRight");
     eyeLeft.setAttribute("ry", 14 * (1 - blinkL));
     eyeRight.setAttribute("ry", 14 * (1 - blinkR));
 
-    // --- Рот (открытие) ---
+    // --- Mouth (opening) ---
     const jawOpen = getBlendshape(bs, "jawOpen");
     const openAmount = 20 + jawOpen * 60;
     mouth.setAttribute("d", `M 200 255 Q 240 ${255 + openAmount} 280 255 Q 240 ${255 + openAmount * 0.4} 200 255`);
 
-    // --- Наклон головы (из матрицы трансформации) ---
+    // --- Head tilt (from the transformation matrix) ---
     let tiltDeg = 0;
     if (result.facialTransformationMatrixes && result.facialTransformationMatrixes.length > 0) {
       const m = result.facialTransformationMatrixes[0].data;
-      // приблизительный угол наклона (roll) из матрицы поворота
+      // approximate tilt angle (roll) from the rotation matrix
       tiltDeg = Math.atan2(m[1], m[0]) * (180 / Math.PI);
     }
     headGroup.setAttribute("transform", `rotate(${tiltDeg} 240 190)`);

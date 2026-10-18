@@ -17,7 +17,7 @@
 <body>
 
 <div>
-  <h3>Камера + точки</h3>
+  <h3>Camera + landmarks</h3>
   <div class="wrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
@@ -25,26 +25,26 @@
 </div>
 
 <div>
-  <h3>Мультяшный аватар (полный маппинг)</h3>
+  <h3>Cartoon avatar (full mapping)</h3>
   <div id="avatarBox">
     <svg id="avatarSvg" width="480" height="480" viewBox="0 0 480 480">
       <g id="headGroup">
-        <!-- уши -->
+        <!-- ears -->
         <circle id="earLeft" cx="100" cy="130" r="38" fill="#ffd79a" stroke="#c99a5b" stroke-width="4"/>
         <circle id="earRight" cx="380" cy="130" r="38" fill="#ffd79a" stroke="#c99a5b" stroke-width="4"/>
 
-        <!-- голова (ширина будет сжиматься при повороте — псевдо-3D) -->
+        <!-- head (width shrinks on turn — pseudo-3D) -->
         <ellipse id="headShape" cx="240" cy="230" rx="150" ry="160" fill="#ffd79a" stroke="#c99a5b" stroke-width="4"/>
 
-        <!-- румянец -->
+        <!-- blush -->
         <ellipse id="cheekLeft" cx="150" cy="265" rx="22" ry="14" fill="#ff9d9d" opacity="0.6"/>
         <ellipse id="cheekRight" cx="330" cy="265" rx="22" ry="14" fill="#ff9d9d" opacity="0.6"/>
 
-        <!-- брови -->
+        <!-- eyebrows -->
         <path id="browLeft" d="M 130 155 Q 170 135 215 155" stroke="#5a3b1e" stroke-width="14" fill="none" stroke-linecap="round"/>
         <path id="browRight" d="M 265 155 Q 310 135 350 155" stroke="#5a3b1e" stroke-width="14" fill="none" stroke-linecap="round"/>
 
-        <!-- глаза: клип-маска гарантирует, что веко реально закрывает глаз -->
+        <!-- eyes: the clip mask ensures the eyelid actually covers the eye -->
         <defs>
           <clipPath id="eyeClipLeft"><ellipse cx="175" cy="210" rx="34" ry="34"/></clipPath>
           <clipPath id="eyeClipRight"><ellipse cx="305" cy="210" rx="34" ry="34"/></clipPath>
@@ -55,7 +55,7 @@
           <g clip-path="url(#eyeClipLeft)">
             <circle id="pupilLeft" cx="175" cy="210" r="14" fill="#3a2a1a"/>
             <circle id="glintLeft" cx="179" cy="205" r="4" fill="#fff"/>
-            <!-- веки как прямоугольники, въезжающие с полным перекрытием -->
+            <!-- eyelids as rectangles sliding in with full coverage -->
             <rect id="lidTopLeft" x="135" y="140" width="80" height="34" fill="#ffd79a"/>
             <rect id="lidBotLeft" x="135" y="210" width="80" height="34" fill="#ffd79a"/>
           </g>
@@ -72,10 +72,10 @@
           </g>
         </g>
 
-        <!-- нос -->
+        <!-- nose -->
         <ellipse id="nose" cx="240" cy="255" rx="14" ry="10" fill="#e8ad6b" stroke="#c99a5b" stroke-width="2"/>
 
-        <!-- рот: верхняя и нижняя губа отдельными путями на нескольких контрольных точках -->
+        <!-- mouth: upper and lower lips as separate paths with several control points -->
         <g id="mouthGroup">
           <path id="mouthCavity" d="M 200 320 Q 240 320 280 320 Q 240 320 200 320 Z" fill="#5a1f1f"/>
           <path id="tongue" d="M 220 320 Q 240 330 260 320 Z" fill="#c75c5c" opacity="0"/>
@@ -172,7 +172,7 @@ function renderLoop(faceLandmarker) {
 
     const bs = result.faceBlendshapes;
 
-    // ===== БРОВИ =====
+    // ===== EYEBROWS =====
     const browUpL = boost(getBS(bs, "browOuterUpLeft") + getBS(bs, "browInnerUp") * 0.5);
     const browUpR = boost(getBS(bs, "browOuterUpRight") + getBS(bs, "browInnerUp") * 0.5);
     const browDownL = boost(getBS(bs, "browDownLeft"));
@@ -184,7 +184,7 @@ function renderLoop(faceLandmarker) {
       ? lerpPath(BROW_R.neutral, BROW_R.furrow, browDownR)
       : lerpPath(BROW_R.neutral, BROW_R.raised, browUpR));
 
-    // ===== ГЛАЗА: веки с полным перекрытием (0..34 px, 34 = полностью закрыт) =====
+    // ===== EYES: eyelids with full coverage (0..34 px, 34 = fully closed) =====
     const blinkL = boost(getBS(bs, "eyeBlinkLeft"));
     const blinkR = boost(getBS(bs, "eyeBlinkRight"));
     const wideL = boost(getBS(bs, "eyeWideLeft"));
@@ -192,7 +192,7 @@ function renderLoop(faceLandmarker) {
     const squintL = boost(getBS(bs, "eyeSquintLeft"));
     const squintR = boost(getBS(bs, "eyeSquintRight"));
 
-    // базовое открытие век: шире при wide, уже при squint, полностью закрыто при blink
+    // base eyelid opening: wider on wide, narrower on squint, fully closed on blink
     const openLTop = clamp01(1 - blinkL - squintL * 0.4 + wideL * 0.15);
     const openLBot = clamp01(1 - blinkL - squintL * 0.6);
     const openRTop = clamp01(1 - blinkR - squintR * 0.4 + wideR * 0.15);
@@ -207,7 +207,7 @@ function renderLoop(faceLandmarker) {
     lidBotRight.setAttribute("y", 210 + 34 * openRBot);
     lidBotRight.setAttribute("height", 34 * (1 - openRBot));
 
-    // ===== ВЗГЛЯД =====
+    // ===== GAZE =====
     const lookOutL = getBS(bs, "eyeLookOutLeft"), lookInL = getBS(bs, "eyeLookInLeft");
     const lookOutR = getBS(bs, "eyeLookOutRight"), lookInR = getBS(bs, "eyeLookInRight");
     const lookUpL = getBS(bs, "eyeLookUpLeft"), lookDownL = getBS(bs, "eyeLookDownLeft");
@@ -223,7 +223,7 @@ function renderLoop(faceLandmarker) {
     glintRight.setAttribute("cx", 309 - gazeXR);
     glintRight.setAttribute("cy", 205 + gazeYR);
 
-    // ===== РОТ: верхняя/нижняя губа независимо, по нескольким точкам =====
+    // ===== MOUTH: upper/lower lip independently, with several points =====
     const jawOpen = boost(getBS(bs, "jawOpen"));
     const smileL = boost(getBS(bs, "mouthSmileLeft"));
     const smileR = boost(getBS(bs, "mouthSmileRight"));
@@ -256,7 +256,7 @@ function renderLoop(faceLandmarker) {
     tongue.setAttribute("d", `M ${cx-18} ${cavityBot-10} Q ${cx} ${cavityBot+2} ${cx+18} ${cavityBot-10} Z`);
     tongue.setAttribute("opacity", jawOpen > 0.45 ? 0.9 : 0);
 
-    // ===== ЩЁКИ И НОС =====
+    // ===== CHEEKS AND NOSE =====
     const puff = boost(getBS(bs, "cheekPuff"));
     cheekLeft.setAttribute("rx", 22 + puff * 15);
     cheekRight.setAttribute("rx", 22 + puff * 15);
@@ -265,7 +265,7 @@ function renderLoop(faceLandmarker) {
     nose.setAttribute("ry", 10 - (sneerL+sneerR) * 2);
     nose.setAttribute("cy", 255 - (sneerL+sneerR) * 3);
 
-    // ===== ГОЛОВА: наклон (roll) + разворот влево/вправо (yaw) псевдо-3D =====
+    // ===== HEAD: tilt (roll) + turn left/right (yaw), pseudo-3D =====
     let tiltDeg = 0, yawDeg = 0, pitchDeg = 0;
     if (result.facialTransformationMatrixes && result.facialTransformationMatrixes.length > 0) {
       const m = result.facialTransformationMatrixes[0].data;
@@ -274,7 +274,7 @@ function renderLoop(faceLandmarker) {
       pitchDeg = Math.atan2(m[6], m[10]) * (180 / Math.PI);
     }
     const yawBoosted = clamp01(Math.abs(yawDeg) / 45) * Math.sign(yawDeg) * AMP;
-    // Сжимаем голову по ширине и сдвигаем черты — имитация поворота в 3/4
+    // Squeeze the head horizontally and shift the features — imitates a 3/4 turn
     const squeeze = 1 - Math.abs(yawBoosted) * 0.35;
     const shiftX = yawBoosted * 45;
     headShape.setAttribute("rx", 150 * clamp01(squeeze));
