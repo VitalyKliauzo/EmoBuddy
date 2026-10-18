@@ -317,6 +317,76 @@ export function buildAvatarScene({ positions, normals, uv, triangles = FACE_TRIA
   attachMorphs(cavity, morphsFor(cw, cgy, (LM[13].z + LM[14].z) / 2));
   bones.Head.add(cavity);
 
+  // ---------- Teeth: two rigid arches (the upper one fixed to the skull, the lower one riding the jaw) ----------
+  // Like the eyeballs, the teeth are solid objects sized once from the neutral mouth width. The lips only reveal them;
+  // morphs never deform a tooth, the lower arch is translated as a whole by the jaw morphs.
+  const TEETH_W = [.105, .085, .09, .08];            // tooth widths from the midline outwards (fractions of mouth width)
+  const TEETH_H = { up: [.17, .14, .15, .12], low: [.12, .12, .13, .11] };
+  function toothGeo(w, h) {
+    const r = Math.min(w, h) * 0.3, x = w / 2, y = h / 2;
+    const s = new THREE.Shape();
+    s.moveTo(-x + r, -y); s.lineTo(x - r, -y); s.quadraticCurveTo(x, -y, x, -y + r);
+    s.lineTo(x, y - r); s.quadraticCurveTo(x, y, x - r, y); s.lineTo(-x + r, y);
+    s.quadraticCurveTo(-x, y, -x, y - r); s.lineTo(-x, -y + r); s.quadraticCurveTo(-x, -y, -x + r, -y);
+    const depth = w * 0.45, bevel = w * 0.12;
+    const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelSize: bevel, bevelThickness: bevel, bevelSegments: 2, curveSegments: 4 });
+    g.translate(0, 0, -depth / 2);
+    return g;
+  }
+  // One arch in world coordinates; `up` hangs from the upper lip line, otherwise the teeth stand on the lower one.
+  function archGeo(up) {
+    const parts = [], lipY = up ? LM[13].y : LM[14].y;
+    const z0 = (LM[13].z + LM[14].z) / 2 - mw * 0.05, sag = mw * 0.14, half = mw * 0.4;
+    const place = (side, i, xEdge) => {
+      const w = TEETH_W[i] * mw, h = (up ? TEETH_H.up : TEETH_H.low)[i] * mw;
+      const x = xEdge + side * w / 2;
+      const zAt = (xx) => z0 - sag * (xx / half) ** 2;
+      const g = toothGeo(w, h);
+      const phi = Math.atan2(-(zAt(x + 1e-4) - zAt(x - 1e-4)), 2e-4); // follow the arch tangent
+      const cy = up ? lipY + mw * 0.03 - h / 2 : lipY - mw * 0.03 + h / 2;
+      g.applyMatrix4(new THREE.Matrix4().makeRotationY(phi).setPosition(midX + x, cy, zAt(x)));
+      parts.push(g);
+      return xEdge + side * w;
+    };
+    for (const side of [1, -1]) { let e = 0; for (let i = 0; i < TEETH_W.length; i++) e = place(side, i, e); }
+    const n = parts.reduce((s, g) => s + g.attributes.position.count, 0);
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+    let o = 0;
+    for (const g of parts) { pos.set(g.attributes.position.array, o); nor.set(g.attributes.normal.array, o); o += g.attributes.position.array.length; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    return { geo, centre: new V3(midX, up ? lipY - mw * 0.06 : lipY + mw * 0.06, z0) };
+  }
+  const teethMat = new THREE.MeshStandardMaterial({ color: 0xf6f3ea, roughness: 0.35, metalness: 0 });
+  const JAW_SHAPES = ['jawOpen', 'jawForward', 'jawLeft', 'jawRight', 'mouthClose'];
+  for (const up of [true, false]) {
+    const { geo, centre } = archGeo(up);
+    const mesh = new THREE.Mesh(geo, teethMat);
+    mesh.name = up ? 'TeethUpper' : 'TeethLower';
+    if (!up) {
+      // rigid jaw motion: the jaw field sampled at the arch centre, applied as the same translation to every vertex
+      const count = geo.attributes.position.count, deltas = {};
+      const rigid = (name) => {
+        const d = evalField(baseAnchors[name], [centre.x, centre.y, centre.z], [centre.y]);
+        const out = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) out.set(d, i * 3);
+        return out;
+      };
+      for (const name of JAW_SHAPES) deltas[name] = rigid(name);
+      for (const [name, mix] of Object.entries(VISEMES)) {
+        const d = new Float32Array(count * 3);
+        for (const [src, w] of Object.entries(mix)) if (deltas[src]) for (let i = 0; i < d.length; i++) d[i] += deltas[src][i] * w;
+        deltas[name] = d;
+      }
+      geo.applyMatrix4(headInv);
+      attachMorphs(mesh, deltas);
+    } else {
+      geo.applyMatrix4(headInv);
+    }
+    bones.Head.add(mesh);
+  }
+
   // ---------- Eyeballs (children of the eye bones so TalkingHead's gaze control rotates them) ----------
   const scleraMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.4 });
   const irisMat = new THREE.MeshStandardMaterial({ color: 0x3a7bd5, roughness: 0.3, side: THREE.DoubleSide });

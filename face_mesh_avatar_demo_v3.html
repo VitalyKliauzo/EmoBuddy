@@ -60,7 +60,7 @@ const statusEl = document.getElementById("status");
 
 const controls = createControls(document.getElementById("controls"));
 const {
-  togglePoints, toggleMesh, toggleTexture, toggleMeshPoints, toggleEyes, toggleTeeth, toggleStable, toggleStatus,
+  togglePoints, toggleMesh, toggleTexture, toggleMeshPoints, toggleEyes, toggleTeeth, teethStyle, toggleStable, toggleStatus,
   renderMode, faceColor, zoom, resetView: resetViewBtn, exportGlb: exportGlbBtn,
   toggleFilter, filterStrength
 } = controls;
@@ -273,7 +273,7 @@ function renderLoop(faceLandmarker) {
         flatRenderer.draw(zpts);
       }
 
-      if (toggleTeeth.checked) drawTeeth(meshCtx, zpts);
+      if (toggleTeeth.checked && !(renderMode.value === "smooth" && teethStyle.value === "rigid")) drawTeeth(meshCtx, zpts);
       if (toggleMeshPoints.checked) {
         meshCtx.fillStyle = "#00FF88";
         for (const p of zpts) {

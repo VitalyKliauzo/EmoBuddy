@@ -51,6 +51,13 @@ const HTML = `
     <input type="checkbox" id="toggleTeeth" checked>
   </div>
   <div class="control-row">
+    <label for="teethStyle">Вид зубов</label>
+    <select id="teethStyle">
+      <option value="rigid" selected>Жёсткие 3D (гладкий рендер)</option>
+      <option value="stretch">Растягиваются по губам</option>
+    </select>
+  </div>
+  <div class="control-row">
     <label for="toggleStable">Неподвижные точки</label>
     <input type="checkbox" id="toggleStable">
   </div>
@@ -101,7 +108,7 @@ const HTML = `
 `;
 
 const IDS = [
-  "togglePoints", "toggleMesh", "toggleTexture", "toggleMeshPoints", "toggleEyes", "eyeStyle", "toggleTeeth", "toggleStable",
+  "togglePoints", "toggleMesh", "toggleTexture", "toggleMeshPoints", "toggleEyes", "eyeStyle", "toggleTeeth", "teethStyle", "toggleStable",
   "toggleStatus", "renderMode", "faceColor", "normalSmooth", "shadowGradient", "zoom", "resetView", "exportGlb",
   "toggleFilter", "filterStrength"
 ];

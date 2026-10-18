@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { createRigidTeeth, MOUTH_HOLE } from "./rigidTeeth.js";
 import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 
 // Гладкий рендер лица в Three.js: усреднённые нормали вершин, текстура лица, глаза в 3D-сцене.
@@ -6,7 +7,7 @@ import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 //   eyes         - описание контуров глаз (EYES)
 //   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
 export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
-  const { shadowGradient, normalSmooth, toggleTexture, toggleEyes, eyeStyle } = controls;
+  const { shadowGradient, normalSmooth, toggleTexture, toggleEyes, eyeStyle, toggleTeeth, teethStyle } = controls;
   // --- Гладкий рендер: Three.js, усреднённые нормали вершин (рисуем в offscreen-canvas, потом копируем в meshCanvas) ---
   const meshCtx = meshCanvas.getContext("2d");
   const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
@@ -49,7 +50,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
   }
 
   let glMesh = null, neighbors = null, tmpNor = null;
-  let fullIndex = null, holedIndex = null, indexIsHoled = false; // индекс меша с отверстиями под глазные яблоки и без них
+  const indexCache = new Map(), holeKey = { eyes: false, mouth: false }; // индексы меша: с отверстиями под глазные яблоки / рот и без них
 
   // Считает сглаженные нормали вершин по массиву позиций pos (x вправо, y вниз, z к камере) -> nor
   function computeNormals(pos, nor, count) {
@@ -110,24 +111,36 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     glMaterial.needsUpdate = true;
   }
 
+  // Жёсткие 3D-зубы: в меше лица вырезается рот, зубы и полость рисуются в сцене
+  const rigidTeeth = createRigidTeeth(glScene, keepNormals);
+  const rigidTeethOn = () => toggleTeeth.checked && teethStyle.value === "rigid";
+  function meshIndex(eyesHoled, mouthHoled) {
+    const key = `${eyesHoled}|${mouthHoled}`;
+    if (!indexCache.has(key)) {
+      const holes = [];
+      if (eyesHoled) holes.push(...eyeHoleSets(EYES));
+      if (mouthHoled) holes.push(MOUTH_HOLE);
+      indexCache.set(key, getTriangles().filter(t => !holes.some(set => t.every(i => set.has(i)))).flat());
+    }
+    return indexCache.get(key);
+  }
+
   function drawSmooth(pts) {
     if (!glMesh) {
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
       g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
-      const holeSets = eyeHoleSets(EYES);
-      fullIndex = getTriangles().flat();
-      holedIndex = getTriangles().filter(t => !holeSets.some(set => t.every(i => set.has(i)))).flat();
-      g.setIndex(fullIndex);
+      g.setIndex(meshIndex(false, false));
       glMesh = new THREE.Mesh(g, glMaterial);
       glMesh.frustumCulled = false;
       glScene.add(glMesh);
     }
     syncGlTexture(pts);
-    const wantHoled = pts.length > 477 && toggleEyes.checked && eyeStyle.value === "ball";
-    if (wantHoled !== indexIsHoled) {
-      glMesh.geometry.setIndex(wantHoled ? holedIndex : fullIndex);
-      indexIsHoled = wantHoled;
+    const eyesHoled = pts.length > 477 && toggleEyes.checked && eyeStyle.value === "ball";
+    const mouthHoled = rigidTeethOn();
+    if (eyesHoled !== holeKey.eyes || mouthHoled !== holeKey.mouth) {
+      glMesh.geometry.setIndex(meshIndex(eyesHoled, mouthHoled));
+      holeKey.eyes = eyesHoled; holeKey.mouth = mouthHoled;
     }
     const pos = glMesh.geometry.attributes.position.array;
     const nor = glMesh.geometry.attributes.normal.array;
@@ -137,6 +150,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     glMesh.geometry.attributes.position.needsUpdate = true;
     glMesh.geometry.attributes.normal.needsUpdate = true;
     updateGlEyes(pts);
+    rigidTeeth.update(pts, mouthHoled);
     glRenderer.render(glScene, glCamera);
     meshCtx.drawImage(glRenderer.domElement, 0, 0, meshCanvas.width, meshCanvas.height);
   }
@@ -257,5 +271,5 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     });
   }
 
-  return { draw: drawSmooth, computeNormals, setFaceColor };
+  return { draw: drawSmooth, computeNormals, setFaceColor, rigidTeethOn };
 }
