@@ -201,7 +201,7 @@ const filters = Array.from({ length: 478 * 3 }, () => new OneEuro());
 function resetFilters() { for (const f of filters) f.reset(); }
 
 // --- Гладкий рендер: Three.js, усреднённые нормали вершин (рисуем в offscreen-canvas, потом копируем в meshCanvas) ---
-const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
 glRenderer.setSize(meshCanvas.width, meshCanvas.height, false);
 glRenderer.setClearColor(0x000000, 1);
 const glScene = new THREE.Scene();
@@ -327,6 +327,7 @@ function drawSmooth(pts) {
   computeNormals(pos, nor, pts.length);
   glMesh.geometry.attributes.position.needsUpdate = true;
   glMesh.geometry.attributes.normal.needsUpdate = true;
+  updateGlEyes(pts);
   glRenderer.render(glScene, glCamera);
   meshCtx.drawImage(glRenderer.domElement, 0, 0, meshCanvas.width, meshCanvas.height);
 }
@@ -336,6 +337,88 @@ const EYES = [
   { contour: [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246], iris: 468, irisEdge: [469, 471] },
   { contour: [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398], iris: 473, irisEdge: [474, 476] }
 ];
+
+// Глаза в smooth-режиме рисуются в 3D-сцене на плоскости контура глаза, поэтому нос и веки перекрывают их через depth-тест.
+// Белок пишет stencil только там, где он виден; радужка и зрачок рисуются только внутри этого stencil.
+const EYE_BIAS = 3; // небольшой сдвиг к камере, чтобы глаз не терялся внутри поверхности меша
+const stencilBase = { side: THREE.DoubleSide, stencilWrite: true, stencilRef: 1 };
+const eyeMats = {
+  white: new THREE.MeshBasicMaterial({ ...stencilBase, color: 0xf4f4f4, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp }),
+  iris: new THREE.MeshBasicMaterial({ ...stencilBase, color: 0x3a7bd5, stencilFunc: THREE.EqualStencilFunc, depthTest: false, depthWrite: false }),
+  pupil: new THREE.MeshBasicMaterial({ ...stencilBase, color: 0x000000, stencilFunc: THREE.EqualStencilFunc, depthTest: false, depthWrite: false }),
+  line: new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide })
+};
+const IRIS_SEG = 24;
+function glEyeMesh(vertCount, index, material, order) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vertCount * 3), 3));
+  g.setIndex(index);
+  const m = new THREE.Mesh(g, material);
+  m.frustumCulled = false;
+  m.renderOrder = order;
+  glScene.add(m);
+  return m;
+}
+function fanIndex(n) { const idx = []; for (let i = 0; i < n; i++) idx.push(n, i, (i + 1) % n); return idx; }
+function ringIndex(n) { const idx = []; for (let i = 0; i < n; i++) { const j = (i + 1) % n; idx.push(i, n + i, n + j, i, n + j, j); } return idx; }
+const glEyes = EYES.map(eye => {
+  const n = eye.contour.length;
+  return {
+    white: glEyeMesh(n + 1, fanIndex(n), eyeMats.white, 1),
+    line: glEyeMesh(2 * n, ringIndex(n), eyeMats.line, 2),
+    iris: glEyeMesh(IRIS_SEG + 1, fanIndex(IRIS_SEG), eyeMats.iris, 3),
+    pupil: glEyeMesh(IRIS_SEG + 1, fanIndex(IRIS_SEG), eyeMats.pupil, 4)
+  };
+});
+
+function updateGlEyes(pts) {
+  const show = pts.length > 477;
+  EYES.forEach((eye, k) => {
+    const ge = glEyes[k];
+    for (const m of Object.values(ge)) m.visible = show;
+    if (!show) return;
+    const ring = eye.contour.map(i => pts[i]);
+    const n = ring.length;
+    let cx = 0, cy = 0, cz = 0;
+    for (const p of ring) { cx += p.x; cy += p.y; cz += -p.z; }
+    cx /= n; cy /= n; cz /= n;
+    // плоскость z = cz + gx*dx + gy*dy по МНК: радужка лежит на ней и не "проваливается" в меш при повороте головы
+    let sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
+    for (const p of ring) {
+      const dx = p.x - cx, dy = p.y - cy, dz = -p.z - cz;
+      sxx += dx * dx; sxy += dx * dy; syy += dy * dy; sxz += dx * dz; syz += dy * dz;
+    }
+    const det = sxx * syy - sxy * sxy || 1;
+    const gx = (sxz * syy - syz * sxy) / det, gy = (syz * sxx - sxz * sxy) / det;
+    const planeZ = (x, y) => cz + gx * (x - cx) + gy * (y - cy) + EYE_BIAS;
+
+    const wp = ge.white.geometry.attributes.position.array;
+    const lp = ge.line.geometry.attributes.position.array;
+    ring.forEach((p, i) => {
+      wp.set([p.x, p.y, -p.z + EYE_BIAS], i * 3);
+      const dx = p.x - cx, dy = p.y - cy, l = Math.hypot(dx, dy) || 1;
+      lp.set([p.x, p.y, -p.z + EYE_BIAS + 1], i * 3);
+      lp.set([p.x + dx / l * 2, p.y + dy / l * 2, -p.z + EYE_BIAS + 1], (n + i) * 3);
+    });
+    wp.set([cx, cy, cz + EYE_BIAS], n * 3);
+    ge.white.geometry.attributes.position.needsUpdate = true;
+    ge.line.geometry.attributes.position.needsUpdate = true;
+
+    const iris = pts[eye.iris];
+    const [e1, e2] = eye.irisEdge.map(i => pts[i]);
+    const r = Math.hypot(e1.x - e2.x, e1.y - e2.y) / 2;
+    for (const [mesh, rr] of [[ge.iris, r], [ge.pupil, r * 0.45]]) {
+      const a = mesh.geometry.attributes.position.array;
+      for (let i = 0; i < IRIS_SEG; i++) {
+        const t = i / IRIS_SEG * 2 * Math.PI;
+        const x = iris.x + Math.cos(t) * rr, y = iris.y + Math.sin(t) * rr;
+        a.set([x, y, planeZ(x, y)], i * 3);
+      }
+      a.set([iris.x, iris.y, planeZ(iris.x, iris.y)], IRIS_SEG * 3);
+      mesh.geometry.attributes.position.needsUpdate = true;
+    }
+  });
+}
 
 function drawEye(c, pts, eye) {
   const iris = pts[eye.iris];
@@ -546,9 +629,17 @@ function renderLoop(faceLandmarker) {
           faces.push({ a, b, c, avgZ: (a.z + b.z + c.z) / 3, facing });
         }
 
+        if (zpts.length > 477) for (const eye of EYES) {
+          // глаз сортируется вместе с треугольниками: нос и другие ближние грани рисуются поверх него
+          const ring = eye.contour.map(i => zpts[i]);
+          const w = Math.hypot(ring[0].x - ring[8].x, ring[0].y - ring[8].y);
+          faces.push({ eye, avgZ: ring.reduce((s, p) => s + p.z, 0) / ring.length - w * 0.15 });
+        }
+
         faces.sort((f1, f2) => f2.avgZ - f1.avgZ);
 
         for (const f of faces) {
+          if (f.eye) { drawEye(meshCtx, zpts, f.eye); continue; }
           const light = 0.25 + f.facing * 0.75;
           const r = Math.floor(90 * light + 40);
           const g = Math.floor(190 * light + 20);
@@ -567,7 +658,6 @@ function renderLoop(faceLandmarker) {
       }
 
       if (toggleTeeth.checked) drawTeeth(meshCtx, zpts);
-      if (zpts.length > 477) for (const eye of EYES) drawEye(meshCtx, zpts, eye);
     }
   } else {
     resetFilters();
