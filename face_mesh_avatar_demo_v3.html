@@ -6,10 +6,10 @@
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; flex-direction: column; gap: 20px; padding: 20px; }
   .top { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
-  .wrap { position: relative; width: 320px; height: 240px; }
-  video, canvas.cam { position: absolute; top: 0; left: 0; width: 320px; height: 240px; }
-  video { transform: scaleX(-1); }
-  canvas.cam { transform: scaleX(-1); }
+  .wrap { position: relative; width: 320px; height: 240px; overflow: hidden; transform: scaleX(-1); cursor: grab; touch-action: none; user-select: none; }
+  .wrap.dragging { cursor: grabbing; }
+  video, canvas.cam { position: absolute; top: 0; left: 0; width: 320px; height: 240px; transform-origin: 0 0; }
+  .hint { font-size: 12px; color: #888; margin-top: 6px; }
   #meshCanvas { background: #000; border-radius: 12px; transform: scaleX(-1); width: 960px; height: 720px; max-width: 100%; }
   h3 { margin-top: 0; }
   #status { font-size: 13px; margin-top: 8px; color: #8f8; white-space: pre-wrap; }
@@ -35,10 +35,11 @@
 <div class="top">
 <div>
   <h3>Камера + точки</h3>
-  <div class="wrap">
+  <div class="wrap" id="camWrap">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
   </div>
+  <div class="hint">Wheel: zoom &middot; drag: pan &middot; double-click: reset</div>
   <div id="status">Загрузка...</div>
 </div>
 
@@ -70,6 +71,13 @@
   <div class="control-row">
     <label for="normalSmooth">Гладкость нормалей</label>
     <input type="range" id="normalSmooth" min="0" max="12" step="1" value="6" style="width:90px">
+  </div>
+  <div class="control-row">
+    <label for="zoom">Zoom</label>
+    <input type="range" id="zoom" min="1" max="5" step="0.05" value="1" style="width:90px">
+  </div>
+  <div class="control-row">
+    <button id="resetView" type="button">Reset zoom</button>
   </div>
   <div class="control-row">
     <button id="exportGlb" type="button">Скачать GLB</button>
@@ -115,8 +123,61 @@ const renderMode = document.getElementById("renderMode");
 const toggleFilter = document.getElementById("toggleFilter");
 const filterStrength = document.getElementById("filterStrength");
 const normalSmooth = document.getElementById("normalSmooth");
+const zoom = document.getElementById("zoom");
 
 let TRIANGLES = [];
+
+// --- Camera crop/zoom: a square-aspect window (x0, y0, size 1/z) in normalized video coords.
+// It crops the camera view, and the rendered face is mapped through the same window. ---
+const camWrap = document.getElementById("camWrap");
+const view = { z: 1, x0: 0, y0: 0 };
+function applyView() {
+  view.z = Math.min(5, Math.max(1, view.z));
+  view.x0 = Math.min(1 - 1 / view.z, Math.max(0, view.x0));
+  view.y0 = Math.min(1 - 1 / view.z, Math.max(0, view.y0));
+  const t = `scale(${view.z}) translate(${-view.x0 * 320}px, ${-view.y0 * 240}px)`;
+  video.style.transform = canvas.style.transform = t;
+  zoom.value = view.z;
+}
+// zoom to z2 keeping the video point at display fraction (u, v) fixed; the wrapper is mirrored, so x is flipped
+function zoomAt(z2, u, v) {
+  const vx = view.x0 + (1 - u) / view.z, vy = view.y0 + v / view.z;
+  view.z = Math.min(5, Math.max(1, z2));
+  view.x0 = vx - (1 - u) / view.z;
+  view.y0 = vy - v / view.z;
+  applyView();
+}
+camWrap.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = camWrap.getBoundingClientRect();
+  zoomAt(view.z * Math.exp(-e.deltaY * 0.002), (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+}, { passive: false });
+let drag = null;
+camWrap.addEventListener("pointerdown", (e) => {
+  drag = { x: e.clientX, y: e.clientY };
+  camWrap.setPointerCapture(e.pointerId);
+  camWrap.classList.add("dragging");
+});
+camWrap.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const r = camWrap.getBoundingClientRect();
+  view.x0 += (e.clientX - drag.x) / r.width / view.z;   // mirrored: dragging right moves the window right
+  view.y0 -= (e.clientY - drag.y) / r.height / view.z;
+  drag = { x: e.clientX, y: e.clientY };
+  applyView();
+});
+const endDrag = () => { drag = null; camWrap.classList.remove("dragging"); };
+camWrap.addEventListener("pointerup", endDrag);
+camWrap.addEventListener("pointercancel", endDrag);
+function resetView() { view.z = 1; view.x0 = view.y0 = 0; applyView(); }
+camWrap.addEventListener("dblclick", resetView);
+document.getElementById("resetView").addEventListener("click", resetView);
+zoom.addEventListener("input", () => {
+  const c = view.x0 + 0.5 / view.z, d = view.y0 + 0.5 / view.z; // keep the window centre
+  view.z = +zoom.value;
+  view.x0 = c - 0.5 / view.z; view.y0 = d - 0.5 / view.z;
+  applyView();
+});
 
 // --- One Euro filter: гасит дрожание точек, но не добавляет лаг при быстром движении ---
 class OneEuro {
@@ -458,12 +519,18 @@ function renderLoop(faceLandmarker) {
 
       lastPts = pts;
       lastLandmarks = landmarks;
+
+      // map through the camera crop window; export keeps the uncropped points
+      const zk = view.z;
+      const zpts = zk === 1 && view.x0 === 0 && view.y0 === 0 ? pts : pts.map(p => ({
+        x: (p.x - view.x0 * W) * zk, y: (p.y - view.y0 * H) * zk, z: p.z * zk
+      }));
       if (renderMode.value === "smooth") {
-        drawSmooth(pts);
+        drawSmooth(zpts);
       } else {
         const faces = [];
         for (const [ia, ib, ic] of TRIANGLES) {
-          const a = pts[ia], b = pts[ib], c = pts[ic];
+          const a = zpts[ia], b = zpts[ib], c = zpts[ic];
           if (!a || !b || !c) continue;
 
           const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
@@ -497,8 +564,8 @@ function renderLoop(faceLandmarker) {
         }
       }
 
-      if (toggleTeeth.checked) drawTeeth(meshCtx, pts);
-      if (pts.length > 477) for (const eye of EYES) drawEye(meshCtx, pts, eye);
+      if (toggleTeeth.checked) drawTeeth(meshCtx, zpts);
+      if (zpts.length > 477) for (const eye of EYES) drawEye(meshCtx, zpts, eye);
     }
   } else {
     resetFilters();
