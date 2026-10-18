@@ -87,6 +87,7 @@ async function loadFaceTexture() {
   faceTexLoading = false;
 }
 toggleTexture.addEventListener("change", () => { if (toggleTexture.checked) loadFaceTexture(); });
+if (toggleTexture.checked) loadFaceTexture(); // включена по умолчанию
 
 const applyStatusVisibility = () => {
   statusEl.style.display = toggleStatus.checked ? "block" : "none";

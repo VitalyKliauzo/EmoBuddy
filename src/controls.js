@@ -2,7 +2,8 @@
 
 const CSS = `
   #controls {
-    width: 220px;
+    width: 320px;
+    box-sizing: border-box;
     background: #1b1b1b;
     border: 1px solid #333;
     border-radius: 12px;
@@ -29,7 +30,7 @@ const HTML = `
   </div>
   <div class="control-row">
     <label for="toggleTexture">Текстура лица (face_v4)</label>
-    <input type="checkbox" id="toggleTexture">
+    <input type="checkbox" id="toggleTexture" checked>
   </div>
   <div class="control-row">
     <label for="toggleMeshPoints">Точки на лице</label>
@@ -42,8 +43,8 @@ const HTML = `
   <div class="control-row">
     <label for="eyeStyle">Вид глаз</label>
     <select id="eyeStyle">
-      <option value="flat" selected>Плоские</option>
-      <option value="ball">Глазные яблоки</option>
+      <option value="flat">Плоские</option>
+      <option value="ball" selected>Глазные яблоки</option>
     </select>
   </div>
   <div class="control-row">
@@ -78,15 +79,15 @@ const HTML = `
   </div>
   <div class="control-row">
     <label for="normalSmooth">Гладкость нормалей</label>
-    <input type="range" id="normalSmooth" min="0" max="12" step="1" value="0" style="width:90px">
+    <input type="range" id="normalSmooth" min="0" max="12" step="1" value="7" style="width:90px">
   </div>
   <div class="control-row">
     <label for="shadowGradient">Градиент теней</label>
-    <input type="range" id="shadowGradient" min="0" max="3" step="0.05" value="1" style="width:90px">
+    <input type="range" id="shadowGradient" min="0" max="3" step="0.05" value="0.5" style="width:90px">
   </div>
   <div class="control-row">
     <label for="zoom">Zoom</label>
-    <input type="range" id="zoom" min="1" max="5" step="0.05" value="1" style="width:90px">
+    <input type="range" id="zoom" min="1" max="5" step="0.05" value="2.6" style="width:90px">
   </div>
   <div class="control-row">
     <button id="resetView" type="button">Reset zoom</button>

@@ -52,6 +52,11 @@ export function createCameraView({ camWrap, video, canvas, zoom, resetButton }) 
     applyView();
   });
 
+  // стартовый зум берём из слайдера, окно по центру
+  view.z = +zoom.value;
+  view.x0 = view.y0 = 0.5 - 0.5 / view.z;
+  applyView();
+
   // Отображает точки (в пикселях меша W x H) через окно обрезки; без обрезки возвращает их как есть
   function mapPoints(pts, W, H) {
     const zk = view.z;
