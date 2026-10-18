@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <title>Face Mesh -> Filled Low-Poly Avatar</title>
 <style>
-  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
-  .wrap { position: relative; width: 480px; }
+  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; flex-direction: column; gap: 20px; padding: 20px; }
+  .wrap { position: relative; width: 480px; height: 360px; }
   video, canvas.cam { position: absolute; top: 0; left: 0; width: 480px; height: 360px; }
   video { transform: scaleX(-1); }
   canvas.cam { transform: scaleX(-1); }
-  #meshCanvas { background: #000; border-radius: 12px; transform: scaleX(-1); }
+  #meshCanvas { background: #000; border-radius: 12px; transform: scaleX(-1); width: 960px; height: 720px; max-width: 100%; }
   h3 { margin-top: 0; }
   #status { font-size: 13px; margin-top: 8px; color: #8f8; white-space: pre-wrap; }
 </style>
@@ -27,7 +27,7 @@
 
 <div>
   <h3>Лицо из полигонов (заливка по точкам)</h3>
-  <canvas id="meshCanvas" width="480" height="360"></canvas>
+  <canvas id="meshCanvas" width="960" height="720"></canvas>
 </div>
 
 <script type="module">
@@ -41,6 +41,48 @@ const meshCtx = meshCanvas.getContext("2d");
 const statusEl = document.getElementById("status");
 
 let TRIANGLES = [];
+
+// Контуры глаз и радужка (FaceLandmarker отдаёт 478 точек: 468-472 правый глаз, 473-477 левый)
+const EYES = [
+  { contour: [33,7,163,144,145,153,154,155,133,173,157,158,159,160,161,246], iris: 468, irisEdge: [469, 471] },
+  { contour: [362,382,381,380,374,373,390,249,263,466,388,387,386,385,384,398], iris: 473, irisEdge: [474, 476] }
+];
+
+function drawEye(c, pts, eye) {
+  const iris = pts[eye.iris];
+  if (!iris || !pts[eye.contour[0]]) return;
+  const [e1, e2] = eye.irisEdge.map(i => pts[i]);
+  const irisR = Math.hypot(e1.x - e2.x, e1.y - e2.y) / 2;
+
+  const path = () => {
+    c.beginPath();
+    eye.contour.forEach((i, k) => k ? c.lineTo(pts[i].x, pts[i].y) : c.moveTo(pts[i].x, pts[i].y));
+    c.closePath();
+  };
+
+  path();
+  c.fillStyle = "#f4f4f4";
+  c.fill();
+
+  // радужка и зрачок следуют за реальной позицией радужки с камеры; обрезаем по контуру глаза
+  c.save();
+  path();
+  c.clip();
+  c.beginPath();
+  c.arc(iris.x, iris.y, irisR, 0, 2 * Math.PI);
+  c.fillStyle = "#3a7bd5";
+  c.fill();
+  c.beginPath();
+  c.arc(iris.x, iris.y, irisR * 0.45, 0, 2 * Math.PI);
+  c.fillStyle = "#000";
+  c.fill();
+  c.restore();
+
+  path();
+  c.strokeStyle = "#222";
+  c.lineWidth = 2;
+  c.stroke();
+}
 
 // Библиотека отдаёт РЁБРА ({start, end}), а не треугольники.
 // Восстанавливаем треугольники: ищем тройки точек, попарно соединённые рёбрами.
@@ -156,6 +198,8 @@ function renderLoop(faceLandmarker) {
       meshCtx.fill();
       meshCtx.stroke();
     }
+
+    if (pts.length > 477) for (const eye of EYES) drawEye(meshCtx, pts, eye);
   }
 
   requestAnimationFrame(() => renderLoop(faceLandmarker));
