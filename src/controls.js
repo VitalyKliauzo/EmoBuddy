@@ -40,6 +40,13 @@ const HTML = `
     <input type="checkbox" id="toggleEyes" checked>
   </div>
   <div class="control-row">
+    <label for="eyeStyle">Вид глаз</label>
+    <select id="eyeStyle">
+      <option value="flat" selected>Плоские</option>
+      <option value="ball">Глазные яблоки</option>
+    </select>
+  </div>
+  <div class="control-row">
     <label for="toggleTeeth">Зубы</label>
     <input type="checkbox" id="toggleTeeth" checked>
   </div>
@@ -94,7 +101,7 @@ const HTML = `
 `;
 
 const IDS = [
-  "togglePoints", "toggleMesh", "toggleTexture", "toggleMeshPoints", "toggleEyes", "toggleTeeth", "toggleStable",
+  "togglePoints", "toggleMesh", "toggleTexture", "toggleMeshPoints", "toggleEyes", "eyeStyle", "toggleTeeth", "toggleStable",
   "toggleStatus", "renderMode", "faceColor", "normalSmooth", "shadowGradient", "zoom", "resetView", "exportGlb",
   "toggleFilter", "filterStrength"
 ];

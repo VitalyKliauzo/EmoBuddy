@@ -1,8 +1,11 @@
+import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
+
 // Плоский 2D-рендер лица на canvas: треугольники сортируются по глубине (painter's algorithm), глаза - вместе с ними.
 //   eyes         - описание контуров глаз (EYES)
 //   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
 export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
-  const { toggleTexture, toggleEyes } = controls;
+  const { toggleTexture, toggleEyes, eyeStyle } = controls;
+  const holeSets = eyeHoleSets(EYES);
   const c = meshCanvas.getContext("2d");
   const faceRGB = { r: 0, g: 0, b: 0 }; // базовый цвет лица
 
@@ -43,7 +46,39 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     }
   }
 
+  // Глазное яблоко: сфера за плоскостью век, видна через контур глаза; радужка - эллипс, повёрнутый в сторону взгляда
+  function drawEyeBall(c, pts, eye) {
+    if (!pts[eye.iris] || !pts[eye.contour[0]]) return;
+    const { center, r, gaze } = eyeBall(pts, eye);
+    const shade = (hex, k) => `rgb(${[1, 3, 5].map(i => Math.round(parseInt(hex.slice(i, i + 2), 16) * k))})`;
+    const light = z => 0.25 + 0.75 * Math.max(0, z);
+
+    c.save();
+    c.beginPath();
+    eye.contour.forEach((i, k) => k ? c.lineTo(pts[i].x, pts[i].y) : c.moveTo(pts[i].x, pts[i].y));
+    c.closePath();
+    c.clip();
+
+    // белок: освещение ~ cos угла между нормалью сферы и осью камеры
+    const g = c.createRadialGradient(center.x, center.y, 0, center.x, center.y, r);
+    for (const s of [0, 0.5, 0.8, 0.95, 1]) g.addColorStop(s, shade("#f4f4f4", light(Math.sqrt(1 - s * s))));
+    c.fillStyle = g;
+    c.beginPath(); c.arc(center.x, center.y, r, 0, 2 * Math.PI); c.fill();
+
+    // радужка и зрачок: круг на сфере вокруг направления взгляда -> эллипс, сжатый вдоль направления наклона
+    const px = center.x + gaze.x * r, py = center.y + gaze.y * r;
+    const rot = Math.atan2(gaze.y, gaze.x), flatten = Math.abs(gaze.z), lit = light(gaze.z);
+    for (const [ratio, color] of [[IRIS_RATIO, "#3a7bd5"], [IRIS_RATIO * PUPIL_RATIO, "#000000"]]) {
+      c.beginPath();
+      c.ellipse(px, py, r * ratio * flatten, r * ratio, rot, 0, 2 * Math.PI);
+      c.fillStyle = shade(color, lit);
+      c.fill();
+    }
+    c.restore();
+  }
+
   function drawEye(c, pts, eye) {
+    if (eyeStyle.value === "ball") return drawEyeBall(c, pts, eye);
     const iris = pts[eye.iris];
     if (!iris || !pts[eye.contour[0]]) return;
     const [e1, e2] = eye.irisEdge.map(i => pts[i]);
@@ -82,7 +117,10 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
   function draw(zpts) {
     const tex = getFaceTex();
     const faces = [];
+    const eyesShown = zpts.length > 477 && toggleEyes.checked;
+    const holes = eyesShown && eyeStyle.value === "ball"; // под глазные яблоки в меше вырезаются отверстия
     for (const [ia, ib, ic] of getTriangles()) {
+      if (holes && holeSets.some(s => s.has(ia) && s.has(ib) && s.has(ic))) continue;
       const a = zpts[ia], b = zpts[ib], c = zpts[ic];
       if (!a || !b || !c) continue;
 
@@ -97,7 +135,7 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
       faces.push({ a, b, c, ia, ib, ic, avgZ: (a.z + b.z + c.z) / 3, facing });
     }
 
-    if (zpts.length > 477 && toggleEyes.checked) for (const eye of EYES) {
+    if (eyesShown) for (const eye of EYES) {
       // глаз сортируется вместе с треугольниками: нос и другие ближние грани рисуются поверх него
       const ring = eye.contour.map(i => zpts[i]);
       const w = Math.hypot(ring[0].x - ring[8].x, ring[0].y - ring[8].y);

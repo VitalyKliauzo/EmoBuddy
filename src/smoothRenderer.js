@@ -1,11 +1,12 @@
 import * as THREE from "three";
+import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 
 // Гладкий рендер лица в Three.js: усреднённые нормали вершин, текстура лица, глаза в 3D-сцене.
 // Рисует в offscreen-канвас WebGL и копирует кадр в 2D-контекст meshCanvas.
 //   eyes         - описание контуров глаз (EYES)
 //   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
 export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
-  const { shadowGradient, normalSmooth, toggleTexture, toggleEyes } = controls;
+  const { shadowGradient, normalSmooth, toggleTexture, toggleEyes, eyeStyle } = controls;
   // --- Гладкий рендер: Three.js, усреднённые нормали вершин (рисуем в offscreen-canvas, потом копируем в meshCanvas) ---
   const meshCtx = meshCanvas.getContext("2d");
   const glRenderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, stencil: true });
@@ -31,12 +32,15 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
   const glMaterial = new THREE.MeshPhongMaterial({ color: 0xd9a68a, shininess: 10, specular: 0x000000, side: THREE.DoubleSide });
   // Направление обхода у восстановленных треугольников произвольное, а DoubleSide в Three.js инвертирует нормаль у "обратных" граней -
   // отсюда шахматный узор. Нормали мы уже ориентировали к камере сами, поэтому отключаем эту инверсию.
-  glMaterial.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <normal_fragment_begin>",
-      THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", "")
-    );
-  };
+  function keepNormals(material) {
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <normal_fragment_begin>",
+        THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", "")
+      );
+    };
+  }
+  keepNormals(glMaterial);
   let faceColorHex = "#d9a68a";
   // Базовый цвет лица; при включённой текстуре цвет белый, и этот восстанавливается после её выключения
   function setFaceColor(c) {
@@ -45,6 +49,7 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
   }
 
   let glMesh = null, neighbors = null, tmpNor = null;
+  let fullIndex = null, holedIndex = null, indexIsHoled = false; // индекс меша с отверстиями под глазные яблоки и без них
 
   // Считает сглаженные нормали вершин по массиву позиций pos (x вправо, y вниз, z к камере) -> nor
   function computeNormals(pos, nor, count) {
@@ -110,12 +115,20 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
       g.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
-      g.setIndex(getTriangles().flat());
+      const holeSets = eyeHoleSets(EYES);
+      fullIndex = getTriangles().flat();
+      holedIndex = getTriangles().filter(t => !holeSets.some(set => t.every(i => set.has(i)))).flat();
+      g.setIndex(fullIndex);
       glMesh = new THREE.Mesh(g, glMaterial);
       glMesh.frustumCulled = false;
       glScene.add(glMesh);
     }
     syncGlTexture(pts);
+    const wantHoled = pts.length > 477 && toggleEyes.checked && eyeStyle.value === "ball";
+    if (wantHoled !== indexIsHoled) {
+      glMesh.geometry.setIndex(wantHoled ? holedIndex : fullIndex);
+      indexIsHoled = wantHoled;
+    }
     const pos = glMesh.geometry.attributes.position.array;
     const nor = glMesh.geometry.attributes.normal.array;
     // ближе к камере = больше z в сцене, поэтому инвертируем z MediaPipe
@@ -161,12 +174,46 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
     };
   });
 
+  // Глазные яблоки (eyeStyle = "ball"): сфера за плоскостью век + шапки радужки и зрачка, повёрнутые по взгляду.
+  // Меш лица без треугольников глаз, поэтому яблоко видно только через отверстие; освещение общее с лицом.
+  const ballMats = {
+    sclera: new THREE.MeshLambertMaterial({ color: 0xf4f4f4, side: THREE.DoubleSide }),
+    iris: new THREE.MeshLambertMaterial({ color: 0x3a7bd5, side: THREE.DoubleSide }),
+    pupil: new THREE.MeshLambertMaterial({ color: 0x000000, side: THREE.DoubleSide })
+  };
+  Object.values(ballMats).forEach(keepNormals);
+  const ballCap = (radius, angle, mat) => {
+    const g = new THREE.SphereGeometry(radius, 32, 8, 0, Math.PI * 2, 0, angle);
+    g.rotateX(Math.PI / 2); // полюс шапки -> +z
+    return new THREE.Mesh(g, mat);
+  };
+  const glBalls = EYES.map(() => {
+    const group = new THREE.Group(), gazeGroup = new THREE.Group();
+    group.add(new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), ballMats.sclera), gazeGroup);
+    gazeGroup.add(
+      ballCap(1.004, Math.asin(IRIS_RATIO), ballMats.iris),
+      ballCap(1.008, Math.asin(IRIS_RATIO * PUPIL_RATIO), ballMats.pupil)
+    );
+    group.traverse(o => { o.frustumCulled = false; });
+    glScene.add(group);
+    return { group, gazeGroup };
+  });
+  const AXIS_Z = new THREE.Vector3(0, 0, 1), gazeDir = new THREE.Vector3();
+
   function updateGlEyes(pts) {
     const show = pts.length > 477 && toggleEyes.checked;
+    const ball = show && eyeStyle.value === "ball";
     EYES.forEach((eye, k) => {
       const ge = glEyes[k];
-      for (const m of Object.values(ge)) m.visible = show;
-      if (!show) return;
+      for (const m of Object.values(ge)) m.visible = show && !ball;
+      glBalls[k].group.visible = ball;
+      if (ball) {
+        const { center, r, gaze } = eyeBall(pts, eye);
+        glBalls[k].group.position.set(center.x, center.y, center.z);
+        glBalls[k].group.scale.setScalar(r);
+        glBalls[k].gazeGroup.quaternion.setFromUnitVectors(AXIS_Z, gazeDir.set(gaze.x, gaze.y, gaze.z));
+      }
+      if (!show || ball) return;
       const ring = eye.contour.map(i => pts[i]);
       const n = ring.length;
       let cx = 0, cy = 0, cz = 0;
