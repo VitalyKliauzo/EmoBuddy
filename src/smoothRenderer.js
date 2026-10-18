@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { createRigidTeeth, MOUTH_HOLE } from "./rigidTeeth.js";
+import { addLights, createRigidTeeth, keepNormals, MOUTH_HOLE } from "./rigidTeeth.js";
 import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 
 // Гладкий рендер лица в Three.js: усреднённые нормали вершин, текстура лица, глаза в 3D-сцене.
@@ -16,31 +16,8 @@ export function createSmoothRenderer({ meshCanvas, controls, eyes: EYES, getTria
   const glScene = new THREE.Scene();
   const glCamera = new THREE.OrthographicCamera(0, meshCanvas.width, 0, meshCanvas.height, -2000, 2000);
   glCamera.position.z = 1000;
-  // Освещение подобрано под палитру плоского режима: ambient 25% + направленный свет 75% (в Three.js интенсивность умножается на PI)
-  // Коэффициент градиента теней = доля направленного света; ambient = 1 - коэффициент (яркость лицом к камере остаётся прежней)
-  const ambientLight = new THREE.AmbientLight(0xffffff, Math.PI * 0.25);
-  glScene.add(ambientLight);
-  const keyLight = new THREE.DirectionalLight(0xffffff, Math.PI * 0.75);
-  function applyShadowGradient() {
-    const k = +shadowGradient.value;
-    keyLight.intensity = Math.PI * k;
-    ambientLight.intensity = Math.PI * Math.max(0, 1 - k); // при k > 1 ambient = 0, свет только усиливается -> контрастнее
-  }
-  shadowGradient.addEventListener("input", applyShadowGradient);
-  applyShadowGradient();
-  keyLight.position.set(0, -150, 1000);
-  glScene.add(keyLight);
+  addLights(glScene, shadowGradient);
   const glMaterial = new THREE.MeshPhongMaterial({ color: 0xd9a68a, shininess: 10, specular: 0x000000, side: THREE.DoubleSide });
-  // Направление обхода у восстановленных треугольников произвольное, а DoubleSide в Three.js инвертирует нормаль у "обратных" граней -
-  // отсюда шахматный узор. Нормали мы уже ориентировали к камере сами, поэтому отключаем эту инверсию.
-  function keepNormals(material) {
-    material.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "#include <normal_fragment_begin>",
-        THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", "")
-      );
-    };
-  }
   keepNormals(glMaterial);
   let faceColorHex = "#d9a68a";
   // Базовый цвет лица; при включённой текстуре цвет белый, и этот восстанавливается после её выключения

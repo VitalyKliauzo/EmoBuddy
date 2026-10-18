@@ -31,6 +31,33 @@ const LOWER_DROP = 0.12;                           // нижняя дуга оп
 const EDGE_UP = 0.04, EDGE_LOW = 0.03 - LOWER_DROP;             // на сколько режущий край заходит за линию губ (при закрытом рте зубы смыкаются внахлёст на сумму, а не по всей длине)
 const CAVITY_DEPTH = 0.16, CAVITY_BACK = 0.22;      // глубина боковых стенок и дна полости (доли ширины лица)
 
+// Направление обхода у восстановленных треугольников произвольное, а DoubleSide в Three.js инвертирует нормаль у "обратных" граней -
+// отсюда шахматный узор. Нормали мы ориентируем к камере сами, поэтому отключаем эту инверсию.
+export function keepNormals(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <normal_fragment_begin>",
+      THREE.ShaderChunk.normal_fragment_begin.replace("normal *= faceDirection;", "")
+    );
+  };
+}
+
+// Освещение сцены, общее для гладкого рендера и зубов поверх плоского: ambient 25% + направленный свет 75% (в Three.js интенсивность
+// умножается на PI). Коэффициент градиента теней = доля направленного света; ambient = 1 - коэффициент (яркость лицом к камере прежняя)
+export function addLights(scene, shadowGradient) {
+  const ambient = new THREE.AmbientLight(0xffffff, Math.PI * 0.25);
+  const key = new THREE.DirectionalLight(0xffffff, Math.PI * 0.75);
+  key.position.set(0, -150, 1000);
+  scene.add(ambient, key);
+  const apply = () => {
+    const k = +shadowGradient.value;
+    key.intensity = Math.PI * k;
+    ambient.intensity = Math.PI * Math.max(0, 1 - k); // при k > 1 ambient = 0, свет только усиливается -> контрастнее
+  };
+  shadowGradient.addEventListener("input", apply);
+  apply();
+}
+
 function toothGeo(w, h) {
   const r = Math.min(w, h) * 0.3, x = w / 2, y = h / 2;
   const s = new THREE.Shape();

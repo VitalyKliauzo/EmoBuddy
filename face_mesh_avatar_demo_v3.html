@@ -274,7 +274,7 @@ function renderLoop(faceLandmarker) {
         flatRenderer.draw(zpts);
       }
 
-      if (toggleTeeth.checked && !(renderMode.value === "smooth" && teethStyle.value === "rigid")) drawTeeth(meshCtx, zpts);
+      if (toggleTeeth.checked && teethStyle.value !== "rigid") drawTeeth(meshCtx, zpts);
       if (toggleMeshPoints.checked) {
         meshCtx.fillStyle = "#00FF88";
         for (const p of zpts) {

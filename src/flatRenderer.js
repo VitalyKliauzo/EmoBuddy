@@ -1,10 +1,12 @@
+import * as THREE from "three";
+import { addLights, createRigidTeeth, keepNormals, MOUTH_HOLE } from "./rigidTeeth.js";
 import { eyeBall, eyeHoleSets, IRIS_RATIO, PUPIL_RATIO } from "./eyeBall.js";
 
 // Плоский 2D-рендер лица на canvas: треугольники сортируются по глубине (painter's algorithm), глаза - вместе с ними.
 //   eyes         - описание контуров глаз (EYES)
 //   getTriangles - () => треугольники меша; getFaceTex - () => загруженная текстура лица или null
 export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriangles, getFaceTex }) {
-  const { toggleTexture, toggleEyes, eyeStyle } = controls;
+  const { toggleTexture, toggleEyes, eyeStyle, toggleTeeth, teethStyle, toggleCavity, cavityColor, cavityDepth } = controls;
   const holeSets = eyeHoleSets(EYES);
   const c = meshCanvas.getContext("2d");
   const faceRGB = { r: 0, g: 0, b: 0 }; // базовый цвет лица
@@ -12,6 +14,41 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
   /** hex вида "#rrggbb" */
   function setFaceColor(hex) {
     faceRGB.r = parseInt(hex.slice(1, 3), 16); faceRGB.g = parseInt(hex.slice(3, 5), 16); faceRGB.b = parseInt(hex.slice(5, 7), 16);
+  }
+
+  // Жёсткие 3D-зубы поверх плоского рендера: отдельная прозрачная WebGL-сцена. Лицо в ней - только буфер глубины (цвет не пишется),
+  // поэтому закрытые губы, нос и т.п. скрывают зубы, а рот в 2D-меше вырезан, и зубы с полостью видны сквозь него.
+  const rigidTeethOn = () => toggleTeeth.checked && teethStyle.value === "rigid";
+  let gl = null;
+  function initGl() {
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setSize(meshCanvas.width, meshCanvas.height, false);
+    renderer.setClearColor(0x000000, 0);
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(0, meshCanvas.width, 0, meshCanvas.height, -2000, 2000);
+    camera.position.z = 1000;
+    addLights(scene, controls.shadowGradient);
+    const geo = new THREE.BufferGeometry();
+    const index = getTriangles().filter(t => !t.every(i => MOUTH_HOLE.has(i))).flat();
+    geo.setIndex(index);
+    const occluder = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
+    occluder.frustumCulled = false;
+    scene.add(occluder);
+    gl = { renderer, scene, camera, geo, teeth: createRigidTeeth(scene, keepNormals), n: 0 };
+  }
+
+  function drawRigidTeeth(pts) {
+    if (!gl) initGl();
+    if (gl.n !== pts.length) {
+      gl.geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts.length * 3), 3));
+      gl.n = pts.length;
+    }
+    const pos = gl.geo.attributes.position;
+    pts.forEach((p, i) => pos.setXYZ(i, p.x, p.y, -p.z));
+    pos.needsUpdate = true;
+    gl.teeth.update(pts, true, toggleCavity.checked, +cavityDepth.value, cavityColor.value);
+    gl.renderer.render(gl.scene, gl.camera);
+    c.drawImage(gl.renderer.domElement, 0, 0, meshCanvas.width, meshCanvas.height);
   }
 
   // Аффинное отображение треугольника текстуры на экранный треугольник + затемнение по освещённости
@@ -118,11 +155,13 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
     const tex = getFaceTex();
     const faces = [];
     const eyesShown = zpts.length > 477 && toggleEyes.checked;
+    const mouthHoled = rigidTeethOn();
     const holes = eyesShown && eyeStyle.value === "ball"; // под глазные яблоки в меше вырезаются отверстия
     for (const [ia, ib, ic] of getTriangles()) {
       if (holes && holeSets.some(s => s.has(ia) && s.has(ib) && s.has(ic))) continue;
       const a = zpts[ia], b = zpts[ib], c = zpts[ic];
       if (!a || !b || !c) continue;
+      if (mouthHoled && MOUTH_HOLE.has(ia) && MOUTH_HOLE.has(ib) && MOUTH_HOLE.has(ic)) continue;
 
       const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
       const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
@@ -162,7 +201,9 @@ export function createFlatRenderer({ meshCanvas, controls, eyes: EYES, getTriang
       c.fill();
       c.stroke();
     }
+
+    if (mouthHoled) drawRigidTeeth(zpts);
   }
 
-  return { draw, setFaceColor };
+  return { draw, setFaceColor, rigidTeethOn };
 }
