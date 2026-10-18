@@ -68,6 +68,10 @@
     <input type="checkbox" id="toggleMeshPoints">
   </div>
   <div class="control-row">
+    <label for="toggleEyes">Глаза</label>
+    <input type="checkbox" id="toggleEyes" checked>
+  </div>
+  <div class="control-row">
     <label for="toggleTeeth">Зубы</label>
     <input type="checkbox" id="toggleTeeth" checked>
   </div>
@@ -139,6 +143,7 @@ const togglePoints = document.getElementById("togglePoints");
 const toggleMesh = document.getElementById("toggleMesh");
 const toggleStatus = document.getElementById("toggleStatus");
 const toggleTeeth = document.getElementById("toggleTeeth");
+const toggleEyes = document.getElementById("toggleEyes");
 const toggleStable = document.getElementById("toggleStable");
 const toggleMeshPoints = document.getElementById("toggleMeshPoints");
 const toggleTexture = document.getElementById("toggleTexture");
@@ -518,7 +523,7 @@ const glEyes = EYES.map(eye => {
 });
 
 function updateGlEyes(pts) {
-  const show = pts.length > 477;
+  const show = pts.length > 477 && toggleEyes.checked;
   EYES.forEach((eye, k) => {
     const ge = glEyes[k];
     for (const m of Object.values(ge)) m.visible = show;
@@ -777,7 +782,7 @@ function renderLoop(faceLandmarker) {
           faces.push({ a, b, c, ia, ib, ic, avgZ: (a.z + b.z + c.z) / 3, facing });
         }
 
-        if (zpts.length > 477) for (const eye of EYES) {
+        if (zpts.length > 477 && toggleEyes.checked) for (const eye of EYES) {
           // глаз сортируется вместе с треугольниками: нос и другие ближние грани рисуются поверх него
           const ring = eye.contour.map(i => zpts[i]);
           const w = Math.hypot(ring[0].x - ring[8].x, ring[0].y - ring[8].y);
