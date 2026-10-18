@@ -2,20 +2,34 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Face Mesh -> Filled Low-Poly Avatar</title>
+<title>Face Mesh -> Filled Low-Poly Avatar (controls)</title>
 <style>
   body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; flex-direction: column; gap: 20px; padding: 20px; }
-  .wrap { position: relative; width: 480px; height: 360px; }
-  video, canvas.cam { position: absolute; top: 0; left: 0; width: 480px; height: 360px; }
+  .top { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+  .wrap { position: relative; width: 320px; height: 240px; }
+  video, canvas.cam { position: absolute; top: 0; left: 0; width: 320px; height: 240px; }
   video { transform: scaleX(-1); }
   canvas.cam { transform: scaleX(-1); }
   #meshCanvas { background: #000; border-radius: 12px; transform: scaleX(-1); width: 960px; height: 720px; max-width: 100%; }
   h3 { margin-top: 0; }
   #status { font-size: 13px; margin-top: 8px; color: #8f8; white-space: pre-wrap; }
+  #controls {
+    width: 220px;
+    background: #1b1b1b;
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 28px;
+  }
+  #controls h4 { margin: 0 0 12px 0; font-size: 14px; color: #ccc; }
+  .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 13px; }
+  .control-row label { cursor: pointer; }
+  .control-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
 </style>
 </head>
 <body>
 
+<div class="top">
 <div>
   <h3>Камера + точки</h3>
   <div class="wrap">
@@ -23,6 +37,23 @@
     <canvas id="canvas" class="cam" width="480" height="360"></canvas>
   </div>
   <div id="status">Загрузка...</div>
+</div>
+
+<div id="controls">
+  <h4>Управление</h4>
+  <div class="control-row">
+    <label for="togglePoints">Точки на камере</label>
+    <input type="checkbox" id="togglePoints" checked>
+  </div>
+  <div class="control-row">
+    <label for="toggleMesh">Полигоны лица</label>
+    <input type="checkbox" id="toggleMesh" checked>
+  </div>
+  <div class="control-row">
+    <label for="toggleStatus">Строка статуса</label>
+    <input type="checkbox" id="toggleStatus" checked>
+  </div>
+</div>
 </div>
 
 <div>
@@ -39,6 +70,14 @@ const ctx = canvas.getContext("2d");
 const meshCanvas = document.getElementById("meshCanvas");
 const meshCtx = meshCanvas.getContext("2d");
 const statusEl = document.getElementById("status");
+
+const togglePoints = document.getElementById("togglePoints");
+const toggleMesh = document.getElementById("toggleMesh");
+const toggleStatus = document.getElementById("toggleStatus");
+
+toggleStatus.addEventListener("change", () => {
+  statusEl.style.display = toggleStatus.checked ? "block" : "none";
+});
 
 let TRIANGLES = [];
 
@@ -84,8 +123,6 @@ function drawEye(c, pts, eye) {
   c.stroke();
 }
 
-// Библиотека отдаёт РЁБРА ({start, end}), а не треугольники.
-// Восстанавливаем треугольники: ищем тройки точек, попарно соединённые рёбрами.
 function buildTrianglesFromEdges(edges, pointCount) {
   const adj = Array.from({ length: pointCount }, () => new Set());
   for (const e of edges) {
@@ -111,7 +148,6 @@ function resolveTriangles() {
   const src = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
   if (!Array.isArray(src) || src.length === 0) return [];
   if (typeof src[0] === "number") {
-    // плоский массив индексов по 3
     const t = [];
     for (let i = 0; i + 2 < src.length; i += 3) t.push([src[i], src[i+1], src[i+2]]);
     return t;
@@ -151,55 +187,56 @@ function renderLoop(faceLandmarker) {
   if (result.faceLandmarks && result.faceLandmarks.length > 0) {
     const landmarks = result.faceLandmarks[0];
 
-    ctx.fillStyle = "#00FF88";
-    for (const p of landmarks) {
-      ctx.beginPath();
-      ctx.arc(p.x * canvas.width, p.y * canvas.height, 1.3, 0, 2 * Math.PI);
-      ctx.fill();
+    if (togglePoints.checked) {
+      ctx.fillStyle = "#00FF88";
+      for (const p of landmarks) {
+        ctx.beginPath();
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, 1.3, 0, 2 * Math.PI);
+        ctx.fill();
+      }
     }
 
-    // z у MediaPipe нормализован примерно в масштабе ширины, поэтому умножаем на ширину
-    const W = meshCanvas.width;
-    const pts = landmarks.map(p => ({ x: p.x * W, y: p.y * meshCanvas.height, z: p.z * W }));
+    if (toggleMesh.checked) {
+      const W = meshCanvas.width;
+      const pts = landmarks.map(p => ({ x: p.x * W, y: p.y * meshCanvas.height, z: p.z * W }));
 
-    const faces = [];
-    for (const [ia, ib, ic] of TRIANGLES) {
-      const a = pts[ia], b = pts[ib], c = pts[ic];
-      if (!a || !b || !c) continue;
+      const faces = [];
+      for (const [ia, ib, ic] of TRIANGLES) {
+        const a = pts[ia], b = pts[ib], c = pts[ic];
+        if (!a || !b || !c) continue;
 
-      // нормаль треугольника -> освещённость (чем плоскость ближе к «лицом к камере», тем светлее)
-      const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
-      const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
-      const nx = uy * vz - uz * vy;
-      const ny = uz * vx - ux * vz;
-      const nz = ux * vy - uy * vx;
-      const len = Math.hypot(nx, ny, nz) || 1;
-      const facing = Math.abs(nz) / len; // 0..1
+        const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+        const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+        const nx = uy * vz - uz * vy;
+        const ny = uz * vx - ux * vz;
+        const nz = ux * vy - uy * vx;
+        const len = Math.hypot(nx, ny, nz) || 1;
+        const facing = Math.abs(nz) / len;
 
-      faces.push({ a, b, c, avgZ: (a.z + b.z + c.z) / 3, facing });
+        faces.push({ a, b, c, avgZ: (a.z + b.z + c.z) / 3, facing });
+      }
+
+      faces.sort((f1, f2) => f2.avgZ - f1.avgZ);
+
+      for (const f of faces) {
+        const light = 0.25 + f.facing * 0.75;
+        const r = Math.floor(90 * light + 40);
+        const g = Math.floor(190 * light + 20);
+        const b = Math.floor(200 * light + 20);
+        meshCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        meshCtx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+        meshCtx.lineWidth = 0.6;
+        meshCtx.beginPath();
+        meshCtx.moveTo(f.a.x, f.a.y);
+        meshCtx.lineTo(f.b.x, f.b.y);
+        meshCtx.lineTo(f.c.x, f.c.y);
+        meshCtx.closePath();
+        meshCtx.fill();
+        meshCtx.stroke();
+      }
+
+      if (pts.length > 477) for (const eye of EYES) drawEye(meshCtx, pts, eye);
     }
-
-    // дальние (большой z) рисуем первыми, ближние (малый z) — поверх
-    faces.sort((f1, f2) => f2.avgZ - f1.avgZ);
-
-    for (const f of faces) {
-      const light = 0.25 + f.facing * 0.75;
-      const r = Math.floor(90 * light + 40);
-      const g = Math.floor(190 * light + 20);
-      const b = Math.floor(200 * light + 20);
-      meshCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-      meshCtx.strokeStyle = `rgb(${r}, ${g}, ${b})`; // обводка того же цвета убирает щели между полигонами
-      meshCtx.lineWidth = 0.6;
-      meshCtx.beginPath();
-      meshCtx.moveTo(f.a.x, f.a.y);
-      meshCtx.lineTo(f.b.x, f.b.y);
-      meshCtx.lineTo(f.c.x, f.c.y);
-      meshCtx.closePath();
-      meshCtx.fill();
-      meshCtx.stroke();
-    }
-
-    if (pts.length > 477) for (const eye of EYES) drawEye(meshCtx, pts, eye);
   }
 
   requestAnimationFrame(() => renderLoop(faceLandmarker));
