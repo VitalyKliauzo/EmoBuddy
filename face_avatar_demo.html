@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Face Tracking -> Avatar Mapping Demo</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
+  .wrap { position: relative; width: 480px; }
+  video, canvas.cam { position: absolute; top: 0; left: 0; width: 480px; height: 360px; }
+  video { transform: scaleX(-1); }
+  canvas.cam { transform: scaleX(-1); }
+  #avatarBox { width: 480px; height: 360px; background: #222; border-radius: 12px; }
+  h3 { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<div>
+  <h3>Камера + точки</h3>
+  <div class="wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" class="cam" width="480" height="360"></canvas>
+  </div>
+</div>
+
+<div>
+  <h3>Аватар (маппинг в реальном времени)</h3>
+  <div id="avatarBox">
+    <svg id="avatarSvg" width="480" height="360" viewBox="0 0 480 360">
+      <!-- голова -->
+      <g id="headGroup">
+        <ellipse cx="240" cy="190" rx="130" ry="140" fill="#ffd79a" stroke="#c99a5b" stroke-width="3"/>
+
+        <!-- левая бровь (экранно слева) -->
+        <path id="browLeft" d="M 150 120 Q 180 105 210 120" stroke="#5a3b1e" stroke-width="8" fill="none" stroke-linecap="round"/>
+        <!-- правая бровь -->
+        <path id="browRight" d="M 270 120 Q 300 105 330 120" stroke="#5a3b1e" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+        <!-- левый глаз -->
+        <ellipse id="eyeLeft" cx="180" cy="160" rx="22" ry="14" fill="#fff" stroke="#333" stroke-width="2"/>
+        <circle cx="180" cy="160" r="7" fill="#333"/>
+
+        <!-- правый глаз -->
+        <ellipse id="eyeRight" cx="300" cy="160" rx="22" ry="14" fill="#fff" stroke="#333" stroke-width="2"/>
+        <circle cx="300" cy="160" r="7" fill="#333"/>
+
+        <!-- нос -->
+        <path d="M 240 170 L 232 210 Q 240 218 248 210 Z" fill="#e8ad6b" stroke="#c99a5b" stroke-width="2"/>
+
+        <!-- рот: путь будем морфить между закрытым и открытым -->
+        <path id="mouth" d="M 200 255 Q 240 265 280 255 Q 240 265 200 255" fill="#7a2f2f" stroke="#5a1f1f" stroke-width="2"/>
+      </g>
+    </svg>
+  </div>
+  <div id="debug" style="font-size:12px; opacity:0.7; margin-top:8px;"></div>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const debugEl = document.getElementById("debug");
+
+const browLeft = document.getElementById("browLeft");
+const browRight = document.getElementById("browRight");
+const eyeLeft = document.getElementById("eyeLeft");
+const eyeRight = document.getElementById("eyeRight");
+const mouth = document.getElementById("mouth");
+const headGroup = document.getElementById("headGroup");
+
+// Опорные (нейтральные) и предельные формы, заданные вручную —
+// это и есть "нулевое состояние" и "амплитуда", как ты описывал.
+const BROW_L_NEUTRAL = "M 150 120 Q 180 105 210 120";
+const BROW_L_RAISED  = "M 150 110 Q 180 80  210 110";
+const BROW_R_NEUTRAL = "M 270 120 Q 300 105 330 120";
+const BROW_R_RAISED  = "M 270 110 Q 300 80  330 110";
+
+function lerpPath(pathA, pathB, t) {
+  // Простая интерполяция: парсим числа из двух путей одинаковой структуры
+  // и линейно смешиваем их по t (0..1).
+  const numsA = pathA.match(/-?\d+(\.\d+)?/g).map(Number);
+  const numsB = pathB.match(/-?\d+(\.\d+)?/g).map(Number);
+  const mixed = numsA.map((a, i) => a + (numsB[i] - a) * t);
+  let idx = 0;
+  return pathA.replace(/-?\d+(\.\d+)?/g, () => mixed[idx++]);
+}
+
+async function main() {
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+
+  const faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: true,
+    runningMode: "VIDEO",
+    numFaces: 1
+  });
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+  await video.play();
+
+  renderLoop(faceLandmarker);
+}
+
+function getBlendshape(blendshapes, name) {
+  if (!blendshapes || blendshapes.length === 0) return 0;
+  const cat = blendshapes[0].categories.find(c => c.categoryName === name);
+  return cat ? cat.score : 0;
+}
+
+function renderLoop(faceLandmarker) {
+  const result = faceLandmarker.detectForVideo(video, performance.now());
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+    const landmarks = result.faceLandmarks[0];
+    ctx.fillStyle = "#00FF88";
+    for (const point of landmarks) {
+      const x = point.x * canvas.width;
+      const y = point.y * canvas.height;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    const bs = result.faceBlendshapes;
+
+    // --- Брови ---
+    const browUpL = getBlendshape(bs, "browOuterUpLeft") || getBlendshape(bs, "browInnerUp");
+    const browUpR = getBlendshape(bs, "browOuterUpRight") || getBlendshape(bs, "browInnerUp");
+    browLeft.setAttribute("d", lerpPath(BROW_L_NEUTRAL, BROW_L_RAISED, browUpL));
+    browRight.setAttribute("d", lerpPath(BROW_R_NEUTRAL, BROW_R_RAISED, browUpR));
+
+    // --- Глаза (прищур/закрытие) ---
+    const blinkL = getBlendshape(bs, "eyeBlinkLeft");
+    const blinkR = getBlendshape(bs, "eyeBlinkRight");
+    eyeLeft.setAttribute("ry", 14 * (1 - blinkL));
+    eyeRight.setAttribute("ry", 14 * (1 - blinkR));
+
+    // --- Рот (открытие) ---
+    const jawOpen = getBlendshape(bs, "jawOpen");
+    const openAmount = 20 + jawOpen * 60;
+    mouth.setAttribute("d", `M 200 255 Q 240 ${255 + openAmount} 280 255 Q 240 ${255 + openAmount * 0.4} 200 255`);
+
+    // --- Наклон головы (из матрицы трансформации) ---
+    let tiltDeg = 0;
+    if (result.facialTransformationMatrixes && result.facialTransformationMatrixes.length > 0) {
+      const m = result.facialTransformationMatrixes[0].data;
+      // приблизительный угол наклона (roll) из матрицы поворота
+      tiltDeg = Math.atan2(m[1], m[0]) * (180 / Math.PI);
+    }
+    headGroup.setAttribute("transform", `rotate(${tiltDeg} 240 190)`);
+
+    debugEl.textContent =
+      `browUpL=${browUpL.toFixed(2)} browUpR=${browUpR.toFixed(2)} ` +
+      `blinkL=${blinkL.toFixed(2)} blinkR=${blinkR.toFixed(2)} ` +
+      `jawOpen=${jawOpen.toFixed(2)} tilt=${tiltDeg.toFixed(1)}°`;
+  }
+
+  requestAnimationFrame(() => renderLoop(faceLandmarker));
+}
+
+main();
+</script>
+</body>
+</html>

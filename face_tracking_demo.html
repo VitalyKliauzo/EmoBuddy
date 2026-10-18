@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Face Tracking Demo</title>
+<style>
+  body { margin: 0; background: #111; }
+  .wrap { position: relative; width: 640px; margin: 20px auto; }
+  video, canvas { position: absolute; top: 0; left: 0; width: 640px; height: 480px; }
+  video { transform: scaleX(-1); }
+  canvas { transform: scaleX(-1); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas" width="640" height="480"></canvas>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+async function main() {
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+
+  const faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: true,
+    runningMode: "VIDEO",
+    numFaces: 1
+  });
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+  await video.play();
+
+  renderLoop(faceLandmarker);
+}
+
+function renderLoop(faceLandmarker) {
+  const result = faceLandmarker.detectForVideo(video, performance.now());
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+    const landmarks = result.faceLandmarks[0];
+    ctx.fillStyle = "#00FF88";
+    for (const point of landmarks) {
+      const x = point.x * canvas.width;
+      const y = point.y * canvas.height;
+      ctx.beginPath();
+      ctx.arc(x, y, 1.5, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  }
+
+  requestAnimationFrame(() => renderLoop(faceLandmarker));
+}
+
+main();
+</script>
+</body>
+</html>

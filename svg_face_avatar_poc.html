@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVG Face Avatar — POC</title>
+<style>
+  :root { color-scheme: dark; --bg:#111522; --panel:#1b2233; --line:#34415a; --text:#eef3ff; --muted:#a8b4cc; --accent:#8be0d0; }
+  * { box-sizing:border-box }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:radial-gradient(ellipse at top,#26334a 0,#111522 55%); color:var(--text); min-height:100vh; }
+  main { max-width:1200px; margin:auto; padding:24px; }
+  h1 { margin:0 0 6px; font-size:clamp(1.5rem,3vw,2.2rem) }
+  .sub { color:var(--muted); margin:0 0 20px }
+  .layout { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr); gap:18px; }
+  .panel { background:rgba(27,34,51,.92); border:1px solid var(--line); border-radius:18px; padding:16px; box-shadow:0 18px 50px #0003; }
+  .stage { min-height:440px; display:grid; place-items:center; overflow:hidden; position:relative; background:radial-gradient(ellipse at 50% 38%,#384b67 0,#202a3c 45%,#151b29 80%); }
+  #avatar { width:min(100%,620px); max-height:68vh; filter:drop-shadow(0 24px 22px #0005); }
+  .tag { position:absolute; left:16px; top:14px; color:#c7d7ed; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 0; }
+  button { border:0; border-radius:10px; padding:10px 14px; color:#101a24; background:var(--accent); font-weight:700; cursor:pointer; }
+  button.secondary { color:var(--text); background:#303b51; border:1px solid #46536c; }
+  button:disabled { opacity:.5; cursor:wait }
+  .status { color:var(--muted); font-size:13px; margin-top:10px; min-height:20px; }
+  video { width:100%; border-radius:12px; background:#090d15; transform:scaleX(-1); display:block; aspect-ratio:4/3; object-fit:cover; }
+  .meters { display:grid; gap:10px; margin-top:16px; }
+  .meter { display:grid; grid-template-columns:105px 1fr 42px; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  .track { height:7px; border-radius:99px; background:#30394c; overflow:hidden; }
+  .fill { height:100%; width:0; border-radius:99px; background:linear-gradient(90deg,#79b8f3,#8be0d0); transition:width .08s linear; }
+  .value { text-align:right; font-variant-numeric:tabular-nums; color:var(--text); }
+  .note { font-size:13px; color:var(--muted); margin:14px 0 0; }
+  .switchrow { display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--muted); font-size:13px; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  .sliderline { display:grid; grid-template-columns:1fr 48px; gap:10px; align-items:center; margin-top:14px; font-size:13px; color:var(--muted); }
+  #gainValue { color:var(--text); text-align:right; }
+  @media(max-width:850px) { main{padding:14px}.layout{grid-template-columns:1fr}.stage{min-height:340px} #avatar{max-height:52vh} }
+</style>
+</head>
+<body>
+<main>
+  <h1>SVG-аватар с мимикой в реальном времени</h1>
+  <p class="sub">POC: камера → MediaPipe Face Landmarker → параметры лица → выразительный SVG-лисёнок.</p>
+  <div class="layout">
+    <section>
+      <div class="panel stage">
+        <span class="tag">SVG avatar · live</span>
+        <svg id="avatar" viewBox="0 0 600 600" role="img" aria-label="Анимированный SVG-лисёнок">
+          <defs>
+            <radialGradient id="fur" cx="34%" cy="22%" r="80%"><stop offset="0" stop-color="#ffd99b"/><stop offset=".48" stop-color="#f49a54"/><stop offset="1" stop-color="#a94d36"/></radialGradient>
+            <linearGradient id="ear" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffcc8b"/><stop offset="1" stop-color="#b94c3d"/></linearGradient>
+            <radialGradient id="cream" cx="40%" cy="20%" r="90%"><stop stop-color="#fff7df"/><stop offset="1" stop-color="#e6c6a1"/></radialGradient>
+            <radialGradient id="iris" cx="30%" cy="25%" r="75%"><stop stop-color="#80d8c4"/><stop offset=".5" stop-color="#247e7c"/><stop offset="1" stop-color="#103c4b"/></radialGradient>
+            <linearGradient id="shade" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fff" stop-opacity=".22"/><stop offset="1" stop-color="#421d28" stop-opacity=".2"/></linearGradient>
+            <filter id="soft"><feGaussianBlur stdDeviation="5"/></filter>
+          </defs>
+          <ellipse cx="300" cy="530" rx="145" ry="22" fill="#070b12" opacity=".32" filter="url(#soft)"/>
+          <g id="head">
+            <!-- ears -->
+            <path d="M174 224 Q130 125 151 62 Q221 104 242 188Z" fill="url(#ear)" stroke="#9e4936" stroke-width="4"/>
+            <path d="M179 174 Q158 115 163 91 Q196 119 215 178Z" fill="#a94847" opacity=".8"/>
+            <path d="M354 188 Q381 103 449 62 Q465 145 419 225Z" fill="url(#ear)" stroke="#9e4936" stroke-width="4"/>
+            <path d="M384 177 Q413 120 440 91 Q439 139 414 190Z" fill="#a94847" opacity=".8"/>
+            <!-- head silhouette -->
+            <path d="M300 113 C220 106 160 157 145 243 C126 335 178 424 240 455 Q300 486 360 455 C422 424 474 335 455 243 C440 157 380 106 300 113Z" fill="url(#fur)" stroke="#9e4936" stroke-width="5"/>
+            <path d="M165 276 Q180 193 229 160 Q205 251 227 329 Q240 384 300 453 Q232 436 194 378 Q162 330 165 276Z" fill="#ffcc83" opacity=".38"/>
+            <path d="M300 250 C265 271 229 300 225 342 C220 389 261 433 300 442 C339 433 380 389 375 342 C371 300 335 271 300 250Z" fill="url(#cream)"/>
+            <!-- brow groups controlled by JS -->
+            <g id="browL"><path d="M190 230 Q224 207 258 226" fill="none" stroke="#873e32" stroke-width="12" stroke-linecap="round"/><path d="M193 226 Q225 208 255 224" fill="none" stroke="#ffd08e" stroke-width="5" stroke-linecap="round"/></g>
+            <g id="browR"><path d="M342 226 Q376 207 410 230" fill="none" stroke="#873e32" stroke-width="12" stroke-linecap="round"/><path d="M345 224 Q375 208 407 226" fill="none" stroke="#ffd08e" stroke-width="5" stroke-linecap="round"/></g>
+            <!-- eye sockets -->
+            <ellipse cx="225" cy="273" rx="43" ry="39" fill="#8f4639" opacity=".42"/>
+            <ellipse cx="375" cy="273" rx="43" ry="39" fill="#8f4639" opacity=".42"/>
+            <g id="eyeL">
+              <ellipse id="eyeWhiteL" cx="225" cy="273" rx="35" ry="30" fill="#fff9e9"/>
+              <ellipse id="irisL" cx="229" cy="275" rx="19" ry="22" fill="url(#iris)"/>
+              <ellipse id="pupilL" cx="231" cy="276" rx="9" ry="14" fill="#081521"/>
+              <ellipse cx="235" cy="267" rx="5" ry="6" fill="#fff" opacity=".9"/>
+              <path id="lidL" d="M190 270 Q225 234 260 270" fill="none" stroke="#a64e3d" stroke-width="8" stroke-linecap="round"/>
+            </g>
+            <g id="eyeR">
+              <ellipse id="eyeWhiteR" cx="375" cy="273" rx="35" ry="30" fill="#fff9e9"/>
+              <ellipse id="irisR" cx="371" cy="275" rx="19" ry="22" fill="url(#iris)"/>
+              <ellipse id="pupilR" cx="369" cy="276" rx="9" ry="14" fill="#081521"/>
+              <ellipse cx="365" cy="267" rx="5" ry="6" fill="#fff" opacity=".9"/>
+              <path id="lidR" d="M340 270 Q375 234 410 270" fill="none" stroke="#a64e3d" stroke-width="8" stroke-linecap="round"/>
+            </g>
+            <!-- cheeks -->
+            <ellipse id="cheekL" cx="191" cy="334" rx="29" ry="17" fill="#f77f72" opacity=".25"/>
+            <ellipse id="cheekR" cx="409" cy="334" rx="29" ry="17" fill="#f77f72" opacity=".25"/>
+            <!-- muzzle and nose -->
+            <ellipse cx="300" cy="350" rx="61" ry="42" fill="url(#cream)"/>
+            <path d="M281 332 Q300 321 319 332 Q312 351 300 352 Q288 351 281 332Z" fill="#3b2831"/>
+            <path d="M300 351 Q300 368 284 372 M300 351 Q300 368 316 372" fill="none" stroke="#6b3d3d" stroke-width="4" stroke-linecap="round"/>
+            <path id="mouth" d="M267 380 Q300 395 333 380 Q300 414 267 380Z" fill="#542733" stroke="#6e3540" stroke-width="3"/>
+            <path id="tongue" d="M285 395 Q300 402 315 395 Q313 411 300 412 Q287 411 285 395Z" fill="#ef7181" opacity="0"/>
+            <!-- forehead shine -->
+            <path d="M211 171 Q251 135 284 137" fill="none" stroke="#fff0ca" stroke-width="8" stroke-linecap="round" opacity=".3"/>
+            <path d="M188 304 Q176 318 182 329" fill="none" stroke="#ffe5bb" stroke-width="4" stroke-linecap="round" opacity=".5"/>
+            <path d="M412 304 Q424 318 418 329" fill="none" stroke="#ffe5bb" stroke-width="4" stroke-linecap="round" opacity=".5"/>
+            <path d="M240 446 Q300 469 360 446" fill="none" stroke="#9d4a39" stroke-width="4" opacity=".35"/>
+          </g>
+        </svg>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <div class="controls">
+          <button id="start">Включить камеру</button>
+          <button id="stop" class="secondary" disabled>Остановить</button>
+          <button id="demo" class="secondary">Демо-анимация</button>
+        </div>
+        <div id="status" class="status">Нажмите «Включить камеру». Камера работает локально в браузере.</div>
+        <label class="sliderline">Усиление мимики <input id="gain" type="range" min="1" max="2.5" step=".1" value="1.7"><span id="gainValue">1.7×</span></label>
+        <div class="switchrow"><input id="mirror" type="checkbox" checked><label for="mirror">Зеркальное отображение аватара</label></div>
+        <p class="note">Для доступа к камере откройте страницу через HTTPS или localhost. При первом запуске браузер запросит разрешение. Видеопоток не отправляется на сервер.</p>
+      </div>
+    </section>
+    <aside class="panel">
+      <h2 style="margin:0 0 12px;font-size:1.1rem">Камера</h2>
+      <video id="video" autoplay muted playsinline></video>
+      <div class="meters" id="meters"></div>
+      <p class="note">Отображаются ключевые blendshape-параметры MediaPipe. Поворот головы оценивается по лицевым ориентирам; выразительность аватара намеренно усилена.</p>
+    </aside>
+  </div>
+</main>
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const video = $("video"), status = $("status"), head = $("head");
+const tracked = ["jawOpen","mouthSmileLeft","mouthSmileRight","mouthFrownLeft","mouthFrownRight","browInnerUp","browOuterUpLeft","browOuterUpRight","eyeBlinkLeft","eyeBlinkRight","eyeSquintLeft","eyeSquintRight","eyeWideLeft","eyeWideRight","cheekSquintLeft","cheekSquintRight","mouthPucker","mouthPressLeft","mouthPressRight"];
+const meterNames = {
+  jawOpen:"Рот открыт", mouthSmileLeft:"Улыбка L", mouthSmileRight:"Улыбка R",
+  browInnerUp:"Брови вверх", eyeBlinkLeft:"Моргание L", eyeBlinkRight:"Моргание R",
+  eyeSquintLeft:"Прищур L", eyeSquintRight:"Прищур R", eyeWideLeft:"Глаза широко", mouthPucker:"Губы трубочкой"
+};
+const meters = {};
+for (const name of tracked) {
+  if (!(name in meterNames)) continue;
+  const row = document.createElement("div"); row.className = "meter";
+  row.innerHTML = `<span>${meterNames[name]}</span><div class="track"><div class="fill"></div></div><span class="value">0.00</span>`;
+  $("meters").append(row); meters[name] = {fill:row.querySelector(".fill"), value:row.querySelector(".value")};
+}
+let landmarker, stream, running=false, demo=false, raf=0, lastVideoTime=-1, lastDemo=0, demoT=0;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+let smooth = {yaw:0,pitch:0,roll:0,jaw:0,smile:0,blinkL:0,blinkR:0,squint:0,wide:0,brow:0,pucker:0,gazeX:0,gazeY:0};
+const getBlend=(cats,name)=>cats?.find(c=>c.categoryName===name)?.score ?? 0;
+function setAttr(id, attrs){const el=$(id); if(!el)return; for(const [k,v] of Object.entries(attrs))el.setAttribute(k,v);}
+function updateAvatar(p) {
+  const gain=Number($("gain").value), g=gain;
+  // Head orientation is exaggerated for a more expressive, readable avatar.
+  head.setAttribute("transform",`translate(300 300) rotate(${p.roll*1.25}) skewY(${p.yaw*0.15}) scale(${1-p.yaw*0.0015},${1+p.pitch*0.001}) translate(-300 -300)`);
+  $("avatar").style.transform = $("mirror").checked ? "scaleX(-1)" : "";
+  const eyeOpenL=clamp(1-p.blinkL*.94-p.squint*.42+p.wide*.22);
+  const eyeOpenR=clamp(1-p.blinkR*.94-p.squint*.42+p.wide*.22);
+  for (const [side,open,gx] of [["L",eyeOpenL,p.gazeX],["R",eyeOpenR,p.gazeX]]) {
+    const cx=side==="L"?225:375, cy=273, rx=35, ry=30;
+    setAttr("eyeWhite"+side,{ry:Math.max(1,30*open),cy:cy+(1-open)*12});
+    setAttr("iris"+side,{cx:cx+4+gx*12,cy:275+p.gazeY*8,ry:Math.max(2,22*open)});
+    setAttr("pupil"+side,{cx:cx+6+gx*12,cy:276+p.gazeY*8,ry:Math.max(1,14*open)});
+    setAttr("lid"+side,{d:`M${cx-rx} ${cy} Q${cx} ${cy-34*open} ${cx+rx} ${cy}`});
+  }
+  const browLift=p.brow*22*g, browTilt=p.yaw*.12;
+  setAttr("browL",{transform:`translate(0 ${-browLift}) rotate(${browTilt} 225 220)`});
+  setAttr("browR",{transform:`translate(0 ${-browLift}) rotate(${-browTilt} 375 220)`});
+  const smile=clamp(p.smile*g), jaw=clamp(p.jaw*g), pucker=clamp(p.pucker*g);
+  const width=33+smile*23-pucker*12, mouthY=380+smile*2;
+  const open=4+jaw*37;
+  setAttr("mouth",{d:`M${300-width} ${mouthY} Q300 ${mouthY+12+open} ${300+width} ${mouthY} Q300 ${mouthY+28+open} ${300-width} ${mouthY}Z`});
+  setAttr("tongue",{opacity:jaw>.38?clamp((jaw-.35)*2.5):0, d:`M${300-width*.45} ${mouthY+open*.65} Q300 ${mouthY+open*.8+12} ${300+width*.45} ${mouthY+open*.65} Q315 ${mouthY+open+18} 300 ${mouthY+open+18} Q285 ${mouthY+open+18} ${300-width*.45} ${mouthY+open*.65}Z`});
+  setAttr("cheekL",{opacity:.18+smile*.65+p.squint*.2,ry:17+smile*5});
+  setAttr("cheekR",{opacity:.18+smile*.65+p.squint*.2,ry:17+smile*5});
+}
+function render(result) {
+  const cats=result.faceBlendshapes?.[0]?.categories || [];
+  const val=n=>getBlend(cats,n);
+  const lm=result.faceLandmarks?.[0];
+  let yaw=0,pitch=0,roll=0,gazeX=0,gazeY=0;
+  if(lm && lm.length>263) {
+    const left=lm[33], right=lm[263], nose=lm[1], forehead=lm[10], chin=lm[152];
+    roll=Math.atan2(right.y-left.y,right.x-left.x)*180/Math.PI;
+    const midX=(left.x+right.x)/2;
+    yaw=clamp((nose.x-midX)/Math.max(.001,Math.abs(right.x-left.x)),-.5,.5)*150;
+    const faceH=Math.max(.001,chin.y-forehead.y);
+    pitch=clamp(((nose.y-forehead.y)/faceH-.48),-.3,.3)*220;
+    // Iris landmarks when present (468+), normalized to eye centers.
+    if(lm.length>473) {
+      const iris=lm[468], eyeA=lm[33], eyeB=lm[133];
+      gazeX=clamp(((iris.x-(eyeA.x+eyeB.x)/2)/Math.max(.01,Math.abs(eyeB.x-eyeA.x)))*2,-1,1);
+      const up=lm[159], down=lm[145];
+      gazeY=clamp((iris.y-(up.y+down.y)/2)/Math.max(.01,Math.abs(down.y-up.y))*2,-1,1);
+    }
+  }
+  const gain=Number($("gain").value);
+  const target={
+    yaw:yaw*gain, pitch:pitch*gain, roll:roll*gain,
+    jaw:val("jawOpen"), smile:(val("mouthSmileLeft")+val("mouthSmileRight"))/2,
+    blinkL:val("eyeBlinkLeft"),blinkR:val("eyeBlinkRight"),
+    squint:(val("eyeSquintLeft")+val("eyeSquintRight"))/2,
+    wide:(val("eyeWideLeft")+val("eyeWideRight"))/2,
+    brow:Math.max(val("browInnerUp"),val("browOuterUpLeft"),val("browOuterUpRight")),
+    pucker:val("mouthPucker"),gazeX,gazeY
+  };
+  for(const k in smooth) smooth[k]=lerp(smooth[k],target[k]??0,.38);
+  updateAvatar(smooth);
+  for(const name of Object.keys(meters)) {
+    const v=val(name); meters[name].fill.style.width=(v*100)+"%"; meters[name].value.textContent=v.toFixed(2);
+  }
+}
+async function start() {
+  $("start").disabled=true; status.textContent="Загрузка модели распознавания лица…";
+  try {
+    if(!navigator.mediaDevices?.getUserMedia) throw new Error("Камера недоступна. Откройте страницу через HTTPS или localhost.");
+    const vision=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    landmarker=await FaceLandmarker.createFromOptions(vision,{
+      baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:"GPU"},
+      runningMode:"VIDEO",numFaces:1,outputFaceBlendshapes:true,outputFacialTransformationMatrixes:true
+    });
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
+    video.srcObject=stream; await video.play(); running=true; demo=false;
+    $("stop").disabled=false; $("demo").disabled=true; status.textContent="Камера активна. Двигайте головой и меняйте выражение лица.";
+    tick();
+  } catch(e) {
+    console.error(e); status.textContent="Не удалось запустить камеру/модель: "+(e.message||e);
+    $("start").disabled=false; $("demo").disabled=false;
+  }
+}
+function tick() {
+  if(!running)return;
+  if(video.readyState>=2 && video.currentTime!==lastVideoTime) {
+    lastVideoTime=video.currentTime;
+    try { render(landmarker.detectForVideo(video,performance.now())); } catch(e){console.warn(e)}
+  }
+  raf=requestAnimationFrame(tick);
+}
+function stop() {
+  running=false; cancelAnimationFrame(raf);
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  video.srcObject=null; stream=null;
+  $("start").disabled=false; $("stop").disabled=true; $("demo").disabled=false;
+  status.textContent="Камера остановлена.";
+}
+function demoTick(t) {
+  if(!demo)return;
+  const s=t/1000;
+  const target={yaw:Math.sin(s*.7)*38,pitch:Math.sin(s*1.1)*22,roll:Math.sin(s*.5)*12,jaw:(Math.sin(s*1.6)+1)*.18,smile:(Math.sin(s*.9)+1)*.32,blinkL:Math.pow(Math.max(0,Math.sin(s*1.3)),18),blinkR:Math.pow(Math.max(0,Math.sin(s*1.3)),18),squint:(Math.sin(s*.8)+1)*.15,wide:(Math.sin(s*1.7)+1)*.18,brow:(Math.sin(s*.8)+1)*.3,pucker:(Math.sin(s*1.2)+1)*.12,gazeX:Math.sin(s*1.5)*.6,gazeY:Math.cos(s)*.4};
+  for(const k in smooth)smooth[k]=lerp(smooth[k],target[k]??0,.12);
+  updateAvatar(smooth);
+  for(const name of Object.keys(meters)){const v=target[name]??0;meters[name].fill.style.width=(v*100)+"%";meters[name].value.textContent=v.toFixed(2)}
+  raf=requestAnimationFrame(demoTick);
+}
+$("start").addEventListener("click",start);
+$("stop").addEventListener("click",stop);
+$("demo").addEventListener("click",()=>{demo=!demo;if(demo){running=false;status.textContent="Демо-анимация без камеры."; $("demo").textContent="Остановить демо";$("start").disabled=true;demoTick(performance.now())}else{cancelAnimationFrame(raf);$("demo").textContent="Демо-анимация";$("start").disabled=false;status.textContent="Демо остановлено."}});
+$("gain").addEventListener("input",()=>{$("gainValue").textContent=Number($("gain").value).toFixed(1)+"×"});
+window.addEventListener("beforeunload",()=>{if(stream)stream.getTracks().forEach(t=>t.stop())});
+</script>
+</body>
+</html>

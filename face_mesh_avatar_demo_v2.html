@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Face Mesh -> Triangulated Avatar (robust)</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
+  .wrap { position: relative; width: 480px; }
+  video, canvas.cam { position: absolute; top: 0; left: 0; width: 480px; height: 360px; }
+  video { transform: scaleX(-1); }
+  canvas.cam { transform: scaleX(-1); }
+  #meshCanvas { background: #000; border-radius: 12px; transform: scaleX(-1); }
+  h3 { margin-top: 0; }
+  #status { font-size: 13px; margin-top: 8px; color: #8f8; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<div>
+  <h3>Камера + точки</h3>
+  <div class="wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" class="cam" width="480" height="360"></canvas>
+  </div>
+  <div id="status">Загрузка...</div>
+</div>
+
+<div>
+  <h3>Маска лица (триангуляция по точкам)</h3>
+  <canvas id="meshCanvas" width="480" height="360"></canvas>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const meshCanvas = document.getElementById("meshCanvas");
+const meshCtx = meshCanvas.getContext("2d");
+const statusEl = document.getElementById("status");
+
+// Пытаемся достать список связей/треугольников из библиотеки в любом из
+// известных форматов. Разные версии @mediapipe/tasks-vision отдают его
+// либо как плоский массив индексов [a,b,c,a,b,c,...], либо как массив
+// объектов {start, end} (пары точек контура, не треугольники).
+let TRIANGLES = [];
+let mode = "none";
+
+function tryBuildFromFlatArray(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  if (typeof arr[0] === "number") {
+    // плоский массив индексов, по 3 на треугольник
+    const tris = [];
+    for (let i = 0; i + 2 < arr.length; i += 3) {
+      tris.push([arr[i], arr[i+1], arr[i+2]]);
+    }
+    return tris.length > 0 ? tris : null;
+  }
+  return null;
+}
+
+function tryBuildFromConnections(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  if (typeof arr[0] === "object" && arr[0] !== null && "start" in arr[0] && "end" in arr[0]) {
+    // это пары точек (рёбра контура), не треугольники — вернём как рёбра
+    return arr.map(c => [c.start, c.end]);
+  }
+  return null;
+}
+
+function resolveTopology() {
+  const candidates = [
+    () => FaceLandmarker.FACE_LANDMARKS_TESSELATION,
+    () => FaceLandmarker.FACE_LANDMARKS_TESSELATION?.default,
+  ];
+  for (const get of candidates) {
+    try {
+      const val = get();
+      const tris = tryBuildFromFlatArray(val);
+      if (tris) { mode = "triangles"; return tris; }
+      const edges = tryBuildFromConnections(val);
+      if (edges) { mode = "edges"; return edges; }
+    } catch (e) { /* ignore and continue */ }
+  }
+  mode = "fallback-points";
+  return [];
+}
+
+async function main() {
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  const faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: false,
+    runningMode: "VIDEO",
+    numFaces: 1
+  });
+
+  TRIANGLES = resolveTopology();
+  statusEl.textContent = `Режим отрисовки: ${mode}. Связей/треугольников найдено: ${TRIANGLES.length}.`;
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+  await video.play();
+  renderLoop(faceLandmarker);
+}
+
+function renderLoop(faceLandmarker) {
+  const result = faceLandmarker.detectForVideo(video, performance.now());
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  meshCtx.fillStyle = "#000";
+  meshCtx.fillRect(0, 0, meshCanvas.width, meshCanvas.height);
+
+  if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+    const landmarks = result.faceLandmarks[0];
+
+    ctx.fillStyle = "#00FF88";
+    for (const p of landmarks) {
+      ctx.beginPath();
+      ctx.arc(p.x * canvas.width, p.y * canvas.height, 1.3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    const pts = landmarks.map(p => ({ x: p.x * meshCanvas.width, y: p.y * meshCanvas.height, z: p.z }));
+
+    if (mode === "triangles") {
+      const tris = [];
+      for (const [ia, ib, ic] of TRIANGLES) {
+        const a = pts[ia], b = pts[ib], c = pts[ic];
+        if (!a || !b || !c) continue;
+        tris.push({ a, b, c, avgZ: (a.z + b.z + c.z) / 3 });
+      }
+      tris.sort((t1, t2) => t1.avgZ - t2.avgZ);
+      for (const t of tris) {
+        const depth = Math.max(0, Math.min(1, (t.avgZ + 0.05) / 0.1));
+        const shade = Math.floor(80 + (1 - depth) * 140);
+        meshCtx.fillStyle = `rgb(${shade - 30}, ${shade}, ${shade + 20})`;
+        meshCtx.strokeStyle = "rgba(0,0,0,0.25)";
+        meshCtx.lineWidth = 0.5;
+        meshCtx.beginPath();
+        meshCtx.moveTo(t.a.x, t.a.y);
+        meshCtx.lineTo(t.b.x, t.b.y);
+        meshCtx.lineTo(t.c.x, t.c.y);
+        meshCtx.closePath();
+        meshCtx.fill();
+        meshCtx.stroke();
+      }
+    } else if (mode === "edges") {
+      meshCtx.strokeStyle = "#5ad1c9";
+      meshCtx.lineWidth = 1;
+      meshCtx.beginPath();
+      for (const [ia, ib] of TRIANGLES) {
+        const a = pts[ia], b = pts[ib];
+        if (!a || !b) continue;
+        meshCtx.moveTo(a.x, a.y);
+        meshCtx.lineTo(b.x, b.y);
+      }
+      meshCtx.stroke();
+      meshCtx.fillStyle = "#00FF88";
+      for (const p of pts) {
+        meshCtx.beginPath();
+        meshCtx.arc(p.x, p.y, 1.3, 0, 2 * Math.PI);
+        meshCtx.fill();
+      }
+    } else {
+      // запасной режим: просто все точки, без соединений —
+      // хотя бы видно, что трекинг работает, пока разбираемся с форматом связей
+      meshCtx.fillStyle = "#00FF88";
+      for (const p of pts) {
+        meshCtx.beginPath();
+        meshCtx.arc(p.x, p.y, 1.8, 0, 2 * Math.PI);
+        meshCtx.fill();
+      }
+    }
+  }
+
+  requestAnimationFrame(() => renderLoop(faceLandmarker));
+}
+
+main();
+</script>
+</body>
+</html>

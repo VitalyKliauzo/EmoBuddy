@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Face Mesh -> Filled Low-Poly Avatar</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; display: flex; gap: 20px; padding: 20px; flex-wrap: wrap; }
+  .wrap { position: relative; width: 480px; }
+  video, canvas.cam { position: absolute; top: 0; left: 0; width: 480px; height: 360px; }
+  video { transform: scaleX(-1); }
+  canvas.cam { transform: scaleX(-1); }
+  #meshCanvas { background: #000; border-radius: 12px; transform: scaleX(-1); }
+  h3 { margin-top: 0; }
+  #status { font-size: 13px; margin-top: 8px; color: #8f8; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<div>
+  <h3>Камера + точки</h3>
+  <div class="wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" class="cam" width="480" height="360"></canvas>
+  </div>
+  <div id="status">Загрузка...</div>
+</div>
+
+<div>
+  <h3>Лицо из полигонов (заливка по точкам)</h3>
+  <canvas id="meshCanvas" width="480" height="360"></canvas>
+</div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const meshCanvas = document.getElementById("meshCanvas");
+const meshCtx = meshCanvas.getContext("2d");
+const statusEl = document.getElementById("status");
+
+let TRIANGLES = [];
+
+// Библиотека отдаёт РЁБРА ({start, end}), а не треугольники.
+// Восстанавливаем треугольники: ищем тройки точек, попарно соединённые рёбрами.
+function buildTrianglesFromEdges(edges, pointCount) {
+  const adj = Array.from({ length: pointCount }, () => new Set());
+  for (const e of edges) {
+    if (e.start < pointCount && e.end < pointCount) {
+      adj[e.start].add(e.end);
+      adj[e.end].add(e.start);
+    }
+  }
+  const tris = [];
+  for (let a = 0; a < pointCount; a++) {
+    for (const b of adj[a]) {
+      if (b <= a) continue;
+      for (const c of adj[b]) {
+        if (c <= b) continue;
+        if (adj[a].has(c)) tris.push([a, b, c]);
+      }
+    }
+  }
+  return tris;
+}
+
+function resolveTriangles() {
+  const src = FaceLandmarker.FACE_LANDMARKS_TESSELATION;
+  if (!Array.isArray(src) || src.length === 0) return [];
+  if (typeof src[0] === "number") {
+    // плоский массив индексов по 3
+    const t = [];
+    for (let i = 0; i + 2 < src.length; i += 3) t.push([src[i], src[i+1], src[i+2]]);
+    return t;
+  }
+  return buildTrianglesFromEdges(src, 478);
+}
+
+async function main() {
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  const faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: false,
+    runningMode: "VIDEO",
+    numFaces: 1
+  });
+
+  TRIANGLES = resolveTriangles();
+  statusEl.textContent = `Восстановлено треугольников: ${TRIANGLES.length}`;
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  video.srcObject = stream;
+  await video.play();
+  renderLoop(faceLandmarker);
+}
+
+function renderLoop(faceLandmarker) {
+  const result = faceLandmarker.detectForVideo(video, performance.now());
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  meshCtx.fillStyle = "#000";
+  meshCtx.fillRect(0, 0, meshCanvas.width, meshCanvas.height);
+
+  if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+    const landmarks = result.faceLandmarks[0];
+
+    ctx.fillStyle = "#00FF88";
+    for (const p of landmarks) {
+      ctx.beginPath();
+      ctx.arc(p.x * canvas.width, p.y * canvas.height, 1.3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+
+    // z у MediaPipe нормализован примерно в масштабе ширины, поэтому умножаем на ширину
+    const W = meshCanvas.width;
+    const pts = landmarks.map(p => ({ x: p.x * W, y: p.y * meshCanvas.height, z: p.z * W }));
+
+    const faces = [];
+    for (const [ia, ib, ic] of TRIANGLES) {
+      const a = pts[ia], b = pts[ib], c = pts[ic];
+      if (!a || !b || !c) continue;
+
+      // нормаль треугольника -> освещённость (чем плоскость ближе к «лицом к камере», тем светлее)
+      const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+      const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      const len = Math.hypot(nx, ny, nz) || 1;
+      const facing = Math.abs(nz) / len; // 0..1
+
+      faces.push({ a, b, c, avgZ: (a.z + b.z + c.z) / 3, facing });
+    }
+
+    // дальние (большой z) рисуем первыми, ближние (малый z) — поверх
+    faces.sort((f1, f2) => f2.avgZ - f1.avgZ);
+
+    for (const f of faces) {
+      const light = 0.25 + f.facing * 0.75;
+      const r = Math.floor(90 * light + 40);
+      const g = Math.floor(190 * light + 20);
+      const b = Math.floor(200 * light + 20);
+      meshCtx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+      meshCtx.strokeStyle = `rgb(${r}, ${g}, ${b})`; // обводка того же цвета убирает щели между полигонами
+      meshCtx.lineWidth = 0.6;
+      meshCtx.beginPath();
+      meshCtx.moveTo(f.a.x, f.a.y);
+      meshCtx.lineTo(f.b.x, f.b.y);
+      meshCtx.lineTo(f.c.x, f.c.y);
+      meshCtx.closePath();
+      meshCtx.fill();
+      meshCtx.stroke();
+    }
+  }
+
+  requestAnimationFrame(() => renderLoop(faceLandmarker));
+}
+
+main();
+</script>
+</body>
+</html>

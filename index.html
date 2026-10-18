@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EmoBuddy</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #eee; font-family: sans-serif; }
+    #avatar { position: fixed; inset: 0; }
+    #ui { position: fixed; top: 12px; left: 12px; z-index: 1; display: flex; gap: 8px; align-items: center; }
+    button { padding: 8px 14px; font-size: 14px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/node_modules/three/build/three.module.js",
+      "three/addons/": "/node_modules/three/examples/jsm/",
+      "talkinghead": "/node_modules/@met4citizen/talkinghead/modules/talkinghead.mjs",
+      "headtts": "/node_modules/@met4citizen/headtts/modules/headtts.mjs"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="avatar"></div>
+  <div id="ui">
+    <button id="speak" disabled>Speak test phrase</button>
+    <select id="emotion"></select>
+    <span id="status">Loading…</span>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

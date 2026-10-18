@@ -1,0 +1,29 @@
+{
+  "name": "emobuddy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.mjs",
+    "headtts": "node node_modules/@met4citizen/headtts/modules/headtts-node.mjs",
+    "fetch-models": "node scripts/fetch-models.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VitalyKliauzo/EmoBuddy.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/VitalyKliauzo/EmoBuddy/issues"
+  },
+  "homepage": "https://github.com/VitalyKliauzo/EmoBuddy#readme",
+  "dependencies": {
+    "@met4citizen/headtts": "^1.3.0",
+    "@met4citizen/talkinghead": "^1.7.0",
+    "three": "^0.186.1"
+  }
+}

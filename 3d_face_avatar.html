@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Face Avatar — Fox</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111522;
+      color: #f0f4ff;
+      font-family: system-ui, sans-serif;
+    }
+
+    main {
+      max-width: 1200px;
+      margin: auto;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(260px, .8fr);
+      gap: 16px;
+    }
+
+    .panel {
+      background: #1c2435;
+      border: 1px solid #35435d;
+      border-radius: 16px;
+      padding: 16px;
+      min-width: 0;
+    }
+
+    #scene {
+      height: 560px;
+      overflow: hidden;
+      border-radius: 12px;
+      background: radial-gradient(#344761, #111522);
+    }
+
+    #scene canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    video {
+      width: 100%;
+      border-radius: 10px;
+      background: #090d15;
+      transform: scaleX(-1);
+    }
+
+    button {
+      padding: 11px 15px;
+      margin: 10px 5px 0 0;
+      border: 0;
+      border-radius: 9px;
+      background: #8be0d0;
+      color: #14212c;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: .5; }
+
+    label {
+      display: block;
+      margin-top: 15px;
+      color: #c0cbe0;
+    }
+
+    input[type="range"] { width: 100%; }
+
+    .status {
+      color: #b4c0d7;
+      font-size: 13px;
+      margin-top: 10px;
+      overflow-wrap: anywhere;
+    }
+
+    .meter {
+      margin: 13px 0;
+      font-size: 13px;
+    }
+
+    .track {
+      height: 7px;
+      margin-top: 5px;
+      border-radius: 10px;
+      background: #354057;
+      overflow: hidden;
+    }
+
+    .fill {
+      width: 0%;
+      height: 100%;
+      background: #8be0d0;
+    }
+
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+      #scene { height: 430px; }
+    }
+  </style>
+</head>
+
+<body>
+<main>
+  <h1>3D Face Avatar</h1>
+  <p>Трёхмерный лисёнок с отслеживанием движений и мимики лица.</p>
+
+  <div class="layout">
+    <section class="panel">
+      <div id="scene"></div>
+
+      <button id="start">Включить камеру</button>
+      <button id="stop" disabled>Остановить камеру</button>
+      <button id="demo">Демо</button>
+
+      <label>
+        Усиление мимики:
+        <strong id="gainValue">1.8×</strong>
+        <input id="gain" type="range"
+               min="1" max="3" value="1.8" step="0.1">
+      </label>
+
+      <div id="status" class="status">
+        Нажмите «Включить камеру» или «Демо».
+      </div>
+    </section>
+
+    <aside class="panel">
+      <h3>Камера</h3>
+      <video id="video" autoplay muted playsinline></video>
+
+      <h3>Мимика</h3>
+      <div id="meters"></div>
+
+      <p class="status">
+        Камера обрабатывается в браузере. Для её использования
+        откройте страницу через localhost или HTTPS.
+      </p>
+    </aside>
+  </div>
+</main>
+
+<script type="module">
+import * as THREE from
+  "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js";
+
+import { OrbitControls } from
+  "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js";
+
+import {
+  FaceLandmarker,
+  FilesetResolver
+} from
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+
+const sceneElement = $("scene");
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#202a3c");
+
+const camera = new THREE.PerspectiveCamera(
+  35,
+  sceneElement.clientWidth / sceneElement.clientHeight,
+  0.1,
+  100
+);
+
+camera.position.set(0, 0.15, 8.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(sceneElement.clientWidth, sceneElement.clientHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+
+sceneElement.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minDistance = 6;
+controls.maxDistance = 12;
+
+scene.add(new THREE.HemisphereLight(0xe3edff, 0x613b30, 2.1));
+
+const keyLight = new THREE.DirectionalLight(0xffe3bd, 3.5);
+keyLight.position.set(-3, 5, 6);
+scene.add(keyLight);
+
+const fillLight = new THREE.PointLight(0x8dc9ff, 45, 20);
+fillLight.position.set(4, 1, 3);
+scene.add(fillLight);
+
+const rimLight = new THREE.PointLight(0xff905d, 35, 20);
+rimLight.position.set(-4, 2, -3);
+scene.add(rimLight);
+
+// Материалы
+
+const fur = new THREE.MeshStandardMaterial({
+  color: "#e88b4b",
+  roughness: 0.67
+});
+
+const lightFur = new THREE.MeshStandardMaterial({
+  color: "#fff0d3",
+  roughness: 0.8
+});
+
+const darkFur = new THREE.MeshStandardMaterial({
+  color: "#71372e",
+  roughness: 0.72
+});
+
+const pink = new THREE.MeshStandardMaterial({
+  color: "#e98284",
+  roughness: 0.5
+});
+
+const noseMaterial = new THREE.MeshStandardMaterial({
+  color: "#30212b",
+  roughness: 0.3
+});
+
+const eyeWhite = new THREE.MeshStandardMaterial({
+  color: "#fff9ed",
+  roughness: 0.25
+});
+
+const irisMaterial = new THREE.MeshPhysicalMaterial({
+  color: "#36a69b",
+  roughness: 0.23,
+  clearcoat: 1
+});
+
+const pupilMaterial = new THREE.MeshStandardMaterial({
+  color: "#10151f",
+  roughness: 0.15
+});
+
+const mouthMaterial = new THREE.MeshStandardMaterial({
+  color: "#54252f",
+  roughness: 0.7
+});
+
+// Создание объёмных объектов
+
+function ellipsoid(parent, material, position, scale) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 40, 32),
+    material
+  );
+
+  mesh.position.set(...position);
+  mesh.scale.set(...scale);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  parent.add(mesh);
+  return mesh;
+}
+
+const avatar = new THREE.Group();
+scene.add(avatar);
+
+const head = new THREE.Group();
+avatar.add(head);
+
+// Голова
+
+ellipsoid(head, fur, [0, 0.1, 0], [1.45, 1.55, 1.05]);
+
+// Светлая область морды
+
+const muzzle = ellipsoid(
+  head, lightFur,
+  [0, -0.52, 0.83],
+  [0.91, 0.72, 0.35]
+);
+
+// Щёки
+
+ellipsoid(head, fur, [-1.05, -0.45, 0.24], [0.45, 0.55, 0.57]);
+ellipsoid(head, fur, [1.05, -0.45, 0.24], [0.45, 0.55, 0.57]);
+
+// Уши
+
+function createEar(x, side) {
+  const ear = new THREE.Mesh(
+    new THREE.ConeGeometry(0.48, 1.65, 48, 12),
+    fur
+  );
+
+  ear.position.set(x, 1.75, -0.03);
+  ear.rotation.z = side * -0.22;
+  ear.scale.set(0.9, 1, 0.55);
+  head.add(ear);
+
+  const inner = ellipsoid(
+    head, pink,
+    [x, 1.79, 0.19],
+    [0.22, 0.53, 0.07]
+  );
+
+  inner.rotation.z = side * -0.22;
+}
+
+createEar(-0.91, -1);
+createEar(0.91, 1);
+
+// Нос, рот и язык
+
+ellipsoid(
+  head, lightFur,
+  [0, -0.58, 0.91],
+  [0.72, 0.45, 0.54]
+);
+
+ellipsoid(
+  head, noseMaterial,
+  [0, -0.27, 1.39],
+  [0.18, 0.12, 0.13]
+);
+
+const mouth = ellipsoid(
+  head, mouthMaterial,
+  [0, -0.83, 1.25],
+  [0.33, 0.035, 0.055]
+);
+
+const tongue = ellipsoid(
+  head, pink,
+  [0, -0.91, 1.30],
+  [0.17, 0.02, 0.035]
+);
+
+// Глаза и брови
+
+function createEye(x, side) {
+  const group = new THREE.Group();
+  group.position.set(x, 0.2, 0.88);
+  head.add(group);
+
+  ellipsoid(group, darkFur, [0, 0, 0], [0.43, 0.37, 0.20]);
+
+  ellipsoid(
+    group, eyeWhite,
+    [0, 0, 0.105],
+    [0.34, 0.28, 0.17]
+  );
+
+  const iris = ellipsoid(
+    group, irisMaterial,
+    [0.025, -0.01, 0.245],
+    [0.185, 0.205, 0.075]
+  );
+
+  const pupil = ellipsoid(
+    group, pupilMaterial,
+    [0.035, -0.005, 0.305],
+    [0.09, 0.13, 0.04]
+  );
+
+  ellipsoid(
+    group, eyeWhite,
+    [-0.025, 0.075, 0.343],
+    [0.045, 0.055, 0.02]
+  );
+
+  const brow = ellipsoid(
+    head, fur,
+    [x, 0.61, 0.91],
+    [0.39, 0.095, 0.12]
+  );
+
+  return { group, iris, pupil, brow };
+}
+
+const eyeL = createEye(-0.59, -1);
+const eyeR = createEye(0.59, 1);
+
+const cheekL = ellipsoid(
+  head, pink,
+  [-0.99, -0.52, 0.62],
+  [0.23, 0.13, 0.08]
+);
+
+const cheekR = ellipsoid(
+  head, pink,
+  [0.99, -0.52, 0.62],
+  [0.23, 0.13, 0.08]
+);
+
+// Параметры мимики
+
+const state = {
+  yaw: 0,
+  pitch: 0,
+  roll: 0,
+  jawOpen: 0,
+  smileL: 0,
+  smileR: 0,
+  blinkL: 0,
+  blinkR: 0,
+  squintL: 0,
+  squintR: 0,
+  wideL: 0,
+  wideR: 0,
+  browL: 0,
+  browR: 0,
+  browInner: 0,
+  gazeX: 0,
+  gazeY: 0
+};
+
+const meterConfig = [
+  ["jawOpen", "Открытие рта"],
+  ["smileL", "Улыбка слева"],
+  ["smileR", "Улыбка справа"],
+  ["blinkL", "Моргание слева"],
+  ["blinkR", "Моргание справа"],
+  ["browL", "Бровь слева"],
+  ["browR", "Бровь справа"]
+];
+
+const meterNodes = {};
+
+for (const [key, label] of meterConfig) {
+  const row = document.createElement("div");
+  row.className = "meter";
+
+  row.innerHTML = `
+    <span>${label}</span>
+    <div class="track">
+      <div class="fill"></div>
+    </div>
+  `;
+
+  $("meters").appendChild(row);
+  meterNodes[key] = row.querySelector(".fill");
+}
+
+const clamp = (v, min = 0, max = 1) =>
+  Math.max(min, Math.min(max, v));
+
+const smoothValue = (current, target, speed = 0.3) =>
+  current + (target - current) * speed;
+
+// Применение мимики к аватару
+
+function updateAvatar() {
+  const gain = Number($("gain").value);
+
+  head.rotation.y = state.yaw * 0.65 * gain;
+  head.rotation.x = state.pitch * 0.55 * gain;
+  head.rotation.z = state.roll * 0.65 * gain;
+
+  head.scale.x = 1 - Math.abs(state.yaw) * 0.045;
+  head.scale.y = 1 + state.pitch * 0.035;
+
+  for (const [eye, blink, squint, wide] of [
+    [eyeL, state.blinkL, state.squintL, state.wideL],
+    [eyeR, state.blinkR, state.squintR, state.wideR]
+  ]) {
+    const open = clamp(1 - blink * 0.98 - squint * 0.55 + wide * 0.3);
+
+    eye.group.scale.y = Math.max(0.04, open);
+
+    eye.iris.position.x = 0.025 + state.gazeX * 0.12;
+    eye.iris.position.y = -0.01 + state.gazeY * 0.08;
+
+    eye.pupil.position.x = 0.035 + state.gazeX * 0.12;
+    eye.pupil.position.y = -0.005 + state.gazeY * 0.08;
+  }
+
+  eyeL.brow.position.y =
+    0.61 + state.browL * 0.30 * gain + state.browInner * 0.1;
+
+  eyeR.brow.position.y =
+    0.61 + state.browR * 0.30 * gain + state.browInner * 0.1;
+
+  eyeL.brow.rotation.z = -0.05 - state.browL * 0.22;
+  eyeR.brow.rotation.z = 0.05 + state.browR * 0.22;
+
+  const jaw = clamp(state.jawOpen * gain);
+
+  mouth.scale.y = 0.035 + jaw * 0.40;
+  mouth.position.y = -0.83 - jaw * 0.05;
+
+  tongue.scale.y = jaw > 0.3 ? 0.07 + jaw * 0.08 : 0.001;
+  tongue.position.y = -0.91 - jaw * 0.12;
+
+  const smileL = clamp(state.smileL * gain);
+  const smileR = clamp(state.smileR * gain);
+
+  muzzle.scale.x = 0.91 + (smileL + smileR) * 0.05;
+
+  cheekL.position.y = -0.52 + smileL * 0.12;
+  cheekR.position.y = -0.52 + smileR * 0.12;
+
+  cheekL.scale.y = 0.13 + smileL * 0.07;
+  cheekR.scale.y = 0.13 + smileR * 0.07;
+
+  cheekL.material.transparent = true;
+  cheekR.material.transparent = true;
+
+  cheekL.material.opacity = 0.25 + smileL * 0.65;
+  cheekR.material.opacity = 0.25 + smileR * 0.65;
+
+  for (const key of Object.keys(meterNodes)) {
+    meterNodes[key].style.width = clamp(state[key]) * 100 + "%";
+  }
+}
+
+// MediaPipe Face Landmarker
+
+let landmarker = null;
+let stream = null;
+let running = false;
+let demo = false;
+let raf = 0;
+let lastVideoTime = -1;
+
+const video = $("video");
+
+async function startCamera() {
+  $("start").disabled = true;
+  $("status").textContent = "Загрузка модели распознавания…";
+
+  try {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        "Камера недоступна. Откройте страницу через localhost или HTTPS."
+      );
+    }
+
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+
+    landmarker = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        delegate: "GPU"
+      },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: true
+    });
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: "user",
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      },
+      audio: false
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    running = true;
+    demo = false;
+    lastVideoTime = -1;
+
+    $("stop").disabled = false;
+    $("status").textContent =
+      "Камера активна. Меняйте выражение лица.";
+
+    tick();
+
+  } catch (error) {
+    console.error(error);
+
+    $("status").textContent = "Ошибка запуска: " + error.message;
+    $("start").disabled = false;
+  }
+}
+
+function tick() {
+  if (!running) return;
+
+  if (
+    video.readyState >= 2 &&
+    video.currentTime !== lastVideoTime
+  ) {
+    lastVideoTime = video.currentTime;
+
+    const result = landmarker.detectForVideo(
+      video,
+      performance.now()
+    );
+
+    const categories =
+      result.faceBlendshapes?.[0]?.categories || [];
+
+    const get = name =>
+      categories.find(item => item.categoryName === name)?.score || 0;
+
+    const lm = result.faceLandmarks?.[0];
+
+    let yaw = 0;
+    let pitch = 0;
+    let roll = 0;
+
+    if (lm && lm.length > 263) {
+      const left = lm[33];
+      const right = lm[263];
+      const nose = lm[1];
+      const forehead = lm[10];
+      const chin = lm[152];
+
+      const midX = (left.x + right.x) / 2;
+      const eyeWidth = Math.max(
+        0.001,
+        Math.abs(right.x - left.x)
+      );
+
+      roll = Math.atan2(
+        right.y - left.y,
+        right.x - left.x
+      );
+
+      yaw = clamp(
+        (nose.x - midX) / eyeWidth,
+        -0.5,
+        0.5
+      );
+
+      const faceHeight = Math.max(
+        0.001,
+        chin.y - forehead.y
+      );
+
+      pitch = clamp(
+        (nose.y - forehead.y) / faceHeight - 0.48,
+        -0.3,
+        0.3
+      );
+    }
+
+    const targets = {
+      yaw: yaw * 2.2,
+      pitch: pitch * 2.5,
+      roll: roll * 1.8,
+
+      jawOpen: get("jawOpen"),
+      smileL: get("mouthSmileLeft"),
+      smileR: get("mouthSmileRight"),
+
+      blinkL: get("eyeBlinkLeft"),
+      blinkR: get("eyeBlinkRight"),
+
+      squintL: get("eyeSquintLeft"),
+      squintR: get("eyeSquintRight"),
+
+      wideL: get("eyeWideLeft"),
+      wideR: get("eyeWideRight"),
+
+      browL: get("browOuterUpLeft"),
+      browR: get("browOuterUpRight"),
+      browInner: get("browInnerUp")
+    };
+
+    for (const key in targets) {
+      state[key] = smoothValue(
+        state[key],
+        targets[key],
+        0.35
+      );
+    }
+
+    updateAvatar();
+  }
+
+  raf = requestAnimationFrame(tick);
+}
+
+function stopCamera() {
+  running = false;
+  cancelAnimationFrame(raf);
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+
+  stream = null;
+  video.srcObject = null;
+
+  $("start").disabled = false;
+  $("stop").disabled = true;
+  $("status").textContent = "Камера остановлена.";
+}
+
+// Демо-режим без камеры
+
+function demoTick(time) {
+  if (!demo) return;
+
+  const t = time / 1000;
+
+  const targets = {
+    yaw: Math.sin(t * 0.7) * 0.5,
+    pitch: Math.sin(t * 1.1) * 0.25,
+    roll: Math.sin(t * 0.5) * 0.2,
+
+    jawOpen: (Math.sin(t * 1.6) + 1) * 0.2,
+
+    smileL: (Math.sin(t * 0.9) + 1) * 0.35,
+    smileR: (Math.sin(t * 0.9 + 0.5) + 1) * 0.35,
+
+    blinkL: Math.pow(Math.max(0, Math.sin(t * 1.4)), 18),
+    blinkR: Math.pow(Math.max(0, Math.sin(t * 1.4 + 0.3)), 18),
+
+    squintL: (Math.sin(t * 0.8) + 1) * 0.15,
+    squintR: (Math.sin(t * 0.8 + 0.4) + 1) * 0.15,
+
+    wideL: (Math.sin(t * 1.7) + 1) * 0.15,
+    wideR: (Math.sin(t * 1.7 + 0.4) + 1) * 0.15,
+
+    browL: (Math.sin(t * 0.8) + 1) * 0.3,
+    browR: (Math.sin(t * 0.8 + 0.4) + 1) * 0.3,
+
+    browInner: (Math.sin(t * 0.8) + 1) * 0.2
+  };
+
+  for (const key in targets) {
+    state[key] = smoothValue(
+      state[key],
+      targets[key],
+      0.15
+    );
+  }
+
+  updateAvatar();
+  raf = requestAnimationFrame(demoTick);
+}
+
+// Рендеринг сцены
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+window.addEventListener("resize", () => {
+  const width = sceneElement.clientWidth;
+  const height = sceneElement.clientHeight;
+
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+
+  renderer.setSize(width, height);
+});
+
+$("start").addEventListener("click", startCamera);
+$("stop").addEventListener("click", stopCamera);
+
+$("demo").addEventListener("click", () => {
+  if (!demo) {
+    stopCamera();
+
+    demo = true;
+    $("start").disabled = true;
+    $("demo").textContent = "Остановить демо";
+    $("status").textContent = "Демо-анимация без камеры.";
+
+    demoTick(performance.now());
+  } else {
+    demo = false;
+    cancelAnimationFrame(raf);
+
+    $("demo").textContent = "Демо";
+    $("start").disabled = false;
+    $("status").textContent = "Демо остановлено.";
+  }
+});
+
+$("gain").addEventListener("input", () => {
+  $("gainValue").textContent =
+    Number($("gain").value).toFixed(1) + "×";
+});
+
+window.addEventListener("beforeunload", () => {
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+  }
+});
+</script>
+</body>
+</html>
